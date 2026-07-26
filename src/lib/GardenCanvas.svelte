@@ -29,15 +29,26 @@
   // kontextmeny (HTML ovanpå canvasen)
   let menu = { visible: false, x: 0, y: 0, kind: "box" as "box" | "row", id: 0 };
 
+  // Under placering stängs panorering av: annars blir minsta musrörelse med knappen nere
+  // ett scendrag istället för ett klick, och ingenting placeras.
+  function syncInteractionMode() {
+    if (!stage) return;
+    const isPlacing = placing !== null || placingRow !== null;
+    stage.draggable(!isPlacing);
+    renderAll();
+  }
+
   export function startPlacing(typ: "odling" | "gang", wCm: number, hCm: number) {
     cancelPlacing();
     placing = { typ, w: snap(wCm), h: snap(hCm) };
     menu.visible = false;
+    syncInteractionMode();
   }
   export function startPlacingRow(plantId: string, count: number) {
     cancelPlacing();
     placingRow = { plantId, count: Math.max(1, Math.round(count)), rotationDeg: 0 };
     menu.visible = false;
+    syncInteractionMode();
   }
   export function cancelPlacing() {
     placing = null;
@@ -46,6 +57,7 @@
     ghostGroup = null;
     ghostState = { valid: false };
     ghostLayer?.batchDraw();
+    syncInteractionMode();
   }
   export function isPlacingRow(): boolean { return placingRow !== null; }
 
@@ -248,7 +260,9 @@
       const plant = plantById[row.plantId];
       const d = plant.avstand_cm;
       const r = rowRect(row, d);
-      const g = new Konva.Group({ x: r.x, y: r.y, draggable: true });
+      const g = new Konva.Group({
+        x: r.x, y: r.y, draggable: placing === null && placingRow === null,
+      });
       drawRowShape(g, row);
 
       if (selectedRowId === row.id) {
@@ -288,8 +302,9 @@
         renderRows(); // ogiltig flytt ⇒ tillbaka
       });
       g.on("click tap", (e) => {
-        e.cancelBubble = true;
+        // vid placering: låt klicket nå scenen, den sköter placeringen
         if (placing || placingRow) return;
+        e.cancelBubble = true;
         selectedRowId = row.id; selectedBoxId = null; menu.visible = false;
         renderAll();
       });
@@ -321,7 +336,10 @@
     const sw = () => 1 / stage.scaleX();
 
     for (const b of garden.boxes) {
-      const g = new Konva.Group({ x: b.x, y: b.y, draggable: !garden.locked, id: String(b.id) });
+      const isPlacing = placing !== null || placingRow !== null;
+      const g = new Konva.Group({
+        x: b.x, y: b.y, draggable: !garden.locked && !isPlacing, id: String(b.id),
+      });
 
       const isGang = b.typ === "gang";
       g.add(new Konva.Rect({
@@ -377,8 +395,9 @@
       });
 
       g.on("click tap", (e) => {
-        e.cancelBubble = true;
+        // vid placering: låt klicket nå scenen, den sköter placeringen
         if (placing || placingRow) return;
+        e.cancelBubble = true;
         selectedBoxId = b.id; selectedRowId = null; menu.visible = false;
         renderBoxes();
       });
