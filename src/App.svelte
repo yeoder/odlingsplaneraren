@@ -24,6 +24,13 @@
   function place(typ: "odling" | "gang") {
     canvas.startPlacing(typ, boxW * 100, boxH * 100);
   }
+
+  let locked = garden.locked;
+  function toggleLock() {
+    locked = garden.locked = !garden.locked;
+    saveGarden(garden);
+    canvas.redraw();
+  }
 </script>
 
 <header>
@@ -37,13 +44,24 @@
 </header>
 
 <div class="toolbar">
-  <label>Ruta/gång:
-    <input type="number" bind:value={boxW} min="0.2" max="20" step="0.1" /> ×
-    <input type="number" bind:value={boxH} min="0.2" max="20" step="0.1" /> m
-  </label>
-  <button on:click={() => place("odling")}>🟫 Placera odlingsruta</button>
-  <button on:click={() => place("gang")}>▨ Placera gång</button>
-  <span class="hint">Dra för att flytta · högerklick för meny · Delete tar bort markerad · scrolla = zoom · rutnät 5 cm</span>
+  {#if !locked}
+    <label>Ruta/gång:
+      <input type="number" bind:value={boxW} min="0.2" max="20" step="0.1" /> ×
+      <input type="number" bind:value={boxH} min="0.2" max="20" step="0.1" /> m
+    </label>
+    <button on:click={() => place("odling")}>🟫 Placera odlingsruta</button>
+    <button on:click={() => place("gang")}>▨ Placera gång</button>
+  {/if}
+  <button class="lock" class:on={locked} on:click={toggleLock}>
+    {locked ? "🔒 Layout låst — klicka för att låsa upp" : "🔓 Lås layout"}
+  </button>
+  <span class="hint">
+    {#if locked}
+      Layouten är låst: boxar kan inte flyttas eller tas bort — dags att plantera!
+    {:else}
+      Dra för att flytta · högerklick för meny · Delete tar bort markerad · scrolla = zoom · rutnät 5 cm
+    {/if}
+  </span>
 </div>
 
 <main>
@@ -68,6 +86,7 @@
     padding: 6px 12px; cursor: pointer; font-size: 0.85rem;
   }
   .toolbar button:hover { background: #eaf2e3; }
+  .toolbar button.lock.on { background: #2e5d1e; color: #fff; border-color: #2e5d1e; }
   .hint { color: #8a8371; font-size: 0.75rem; }
   main { flex: 1; padding: 12px; min-height: 0; }
 </style>

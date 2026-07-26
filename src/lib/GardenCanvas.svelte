@@ -21,9 +21,6 @@
   // kontextmeny (HTML ovanpå canvasen)
   let menu = { visible: false, x: 0, y: 0, boxId: 0 };
 
-  const FUKT_NEXT = { "låg": "medel", "medel": "hög", "hög": "låg" } as const;
-  const FUKT_ICON = { "låg": "💧", "medel": "💧💧", "hög": "💧💧💧" } as const;
-
   export function startPlacing(typ: "odling" | "gang", wCm: number, hCm: number) {
     placing = { typ, w: snap(wCm), h: snap(hCm) };
     menu.visible = false;
@@ -61,7 +58,7 @@
     let y = snap(wp.y - placing.h / 2);
     x = Math.min(Math.max(x, 0), Math.max(garden.widthCm - placing.w, 0));
     y = Math.min(Math.max(y, 0), Math.max(garden.heightCm - placing.h, 0));
-    const candidate = { id: -1, typ: placing.typ, x, y, w: placing.w, h: placing.h, fukt: "medel", label: "" } as Box;
+    const candidate = { id: -1, typ: placing.typ, x, y, w: placing.w, h: placing.h, label: "" } as Box;
     const ok = isValid(candidate);
     if (!ghost) {
       ghost = new Konva.Rect({ dash: [8, 4], strokeWidth: 2, listening: false });
@@ -84,7 +81,6 @@
       typ: placing.typ,
       x: ghost.x(), y: ghost.y(),
       w: placing.w, h: placing.h,
-      fukt: "medel",
       label: "",
     };
     if (!isValid(b)) return true; // rött spöke → placera inte, behåll läget
@@ -100,7 +96,7 @@
     const sw = () => 1 / stage.scaleX();
 
     for (const b of garden.boxes) {
-      const g = new Konva.Group({ x: b.x, y: b.y, draggable: true, id: String(b.id) });
+      const g = new Konva.Group({ x: b.x, y: b.y, draggable: !garden.locked, id: String(b.id) });
 
       const isGang = b.typ === "gang";
       g.add(new Konva.Rect({
@@ -113,15 +109,20 @@
       }));
 
       const fs = Math.min(14, Math.max(8, Math.min(b.w, b.h) / 6));
-      const labelText = isGang
-        ? `gång ${b.w / 100}×${b.h / 100} m`
-        : `${b.label ? b.label + " · " : ""}${b.w / 100}×${b.h / 100} m ${FUKT_ICON[b.fukt]}`;
-      g.add(new Konva.Text({
-        x: 4, y: 4, width: b.w - 8,
-        text: labelText,
-        fontSize: fs, fill: isGang ? "#77705f" : "#ffffffbb",
-        listening: false,
-      }));
+      // låst läge: dölj all text på boxarna så den inte stör vid plantering
+      const labelText = garden.locked
+        ? ""
+        : isGang
+          ? `gång ${b.w / 100}×${b.h / 100} m`
+          : `${b.label ? b.label + " · " : ""}${b.w / 100}×${b.h / 100} m`;
+      if (labelText) {
+        g.add(new Konva.Text({
+          x: 4, y: 4, width: b.w - 8,
+          text: labelText,
+          fontSize: fs, fill: isGang ? "#77705f" : "#ffffffbb",
+          listening: false,
+        }));
+      }
 
       // snap under drag
       g.dragBoundFunc(function (pos) {
@@ -152,6 +153,7 @@
       g.on("contextmenu", (e) => {
         e.evt.preventDefault();
         e.cancelBubble = true;
+        if (garden.locked) return;
         selectedId = b.id;
         renderBoxes();
         const r = container.getBoundingClientRect();
@@ -206,13 +208,6 @@
     cand.y = Math.min(cand.y, garden.heightCm - cand.h);
     if (isValid(cand, b.id)) { Object.assign(b, cand); commit(); renderBoxes(); }
     menu.visible = false;
-  }
-  function actFukt() {
-    const b = menuBox(); if (!b) return;
-    b.fukt = FUKT_NEXT[b.fukt];
-    commit(); renderBoxes();
-    // menyn lämnas öppen så man kan klicka sig till rätt nivå
-    menu = { ...menu };
   }
   function actRename() {
     const b = menuBox(); if (!b) return;
@@ -277,6 +272,13 @@
     if (stage) fitToView();
   }
 
+  // rita om boxarna utan att röra zoom/position (t.ex. vid lås/upplås)
+  export function redraw() {
+    if (!stage) return;
+    if (garden.locked) { cancelPlacing(); menu.visible = false; selectedId = null; }
+    renderBoxes();
+  }
+
   onMount(() => {
     nextId = garden.boxes.concat(garden.rows as any).reduce((m: number, o: any) => Math.max(m, o.id), 0) + 1;
 
@@ -328,7 +330,7 @@
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") { cancelPlacing(); menu.visible = false; }
       if ((e.key === "Delete" || e.key === "Backspace") && selectedId !== null
-          && !(e.target instanceof HTMLInputElement)) {
+          && !garden.locked && !(e.target instanceof HTMLInputElement)) {
         garden.boxes = garden.boxes.filter(b => b.id !== selectedId);
         garden.rows = garden.rows.filter(r => r.boxId !== selectedId);
         selectedId = null;
@@ -372,7 +374,6 @@
       <button on:click={actDuplicate}>⧉ Duplicera</button>
       <button on:click={actRotate}>⟳ Rotera 90°</button>
       {#if menuBox()?.typ === "odling"}
-        <button on:click={actFukt}>💧 Fukt: {menuBox()?.fukt}</button>
         <button on:click={actRename}>✏️ Namnge…</button>
       {/if}
       <button class="danger" on:click={actDelete}>🗑 Ta bort</button>

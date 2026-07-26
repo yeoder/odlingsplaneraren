@@ -5,10 +5,13 @@ export interface Garden {
   widthCm: number;
   heightCm: number;
   sunDirectionDeg: number; // 0 = norr uppåt
+  locked: boolean; // låst layout: boxar kan inte flyttas/ändras, bara planteras i
   boxes: Box[];
   rows: PlantRow[];
 }
 
+// Boxen har ingen egen fuktnivå — vilken fukt boxen bör hållas i härleds från
+// vattenbehovet hos de växter som planteras i den (regelmotorn varnar vid blandning).
 export interface Box {
   id: number;
   typ: "odling" | "gang";
@@ -16,7 +19,6 @@ export interface Box {
   y: number;
   w: number;
   h: number;
-  fukt: "låg" | "medel" | "hög";
   label: string;
 }
 
@@ -32,7 +34,7 @@ export interface PlantRow {
 }
 
 export function newGarden(): Garden {
-  return { widthCm: 800, heightCm: 500, sunDirectionDeg: 0, boxes: [], rows: [] };
+  return { widthCm: 800, heightCm: 500, sunDirectionDeg: 0, locked: false, boxes: [], rows: [] };
 }
 
 export function snap(cm: number): number {

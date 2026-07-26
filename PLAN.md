@@ -29,7 +29,7 @@ Ritytan görs responsiv så den funkar på både dator och surfplatta/mobil (tou
 ## Datamodell (kärnan)
 ```ts
 Garden      { widthCm, heightCm, sunDirection: grader (0=N), boxes: Box[] }
-Box         { id, x, y, w, h, rotation?, typ: "odling"|"gång", fukt: "låg"|"medel"|"hög", label }
+Box         { id, x, y, w, h, rotation?, typ: "odling"|"gång", label }
 PlantRow    { id, boxId, plantId, count, x, y, rotationDeg, compression: 0.8–1.0 }
 Plant       { id, namn, familj, avstand_cm, hojd_cm, vattenbehov, sol, tider..., grannar... }
 ```
@@ -43,7 +43,9 @@ Plant       { id, namn, familj, avstand_cm, hojd_cm, vattenbehov, sol, tider...,
    - Ryms med 80–99 % av rek. avstånd → tillåts, **gul varning "trångt"**.
    - Under 80 % → blockeras.
 3. **Avstånd/kompanjoner gäller bara inom samma box.** Två boxar mot varandra är ändå separata
-   (olika bevattning). Boxens `fukt`-nivå jämförs mot växtens `vattenbehov` → varning vid mismatch.
+   (olika bevattning). Boxen har **ingen egen fuktinställning** — det är växterna som placeras
+   som avgör hur fuktig boxen bör hållas: regelmotorn härleder boxens fuktprofil ur växternas
+   `vattenbehov` och varnar när växter med olika behov blandas i samma box.
 4. **Kompanjoner:** dåliga grannar i samma box → röd varning; bra grannar → grön bock.
 5. **Sol & skugga:** trädgården har en riktning (kompassros i hörnet).
    - Morgonsol ≈ öst, kvällssol ≈ väst, mitt på dagen ≈ syd.
@@ -54,7 +56,10 @@ Plant       { id, namn, familj, avstand_cm, hojd_cm, vattenbehov, sol, tider...,
 
 ## Interaktioner
 - **Rita box:** ange B×L i cm/m → spökrektangel följer musen, snappar, rött om overlap → klick placerar.
-- **Högerklick på box:** Duplicera (hamnar snappad intill), Rotera 90°, Egenskaper (fukt, namn), Ta bort.
+- **Högerklick på box:** Duplicera (hamnar snappad intill), Rotera 90°, Namnge, Ta bort.
+- **Lås layout:** när boxarna är på plats låser man layouten (🔒-knapp) → boxar kan inte flyttas,
+  ändras eller tas bort av misstag under planteringen, och **all text på boxarna döljs**
+  så den inte stör. Upplåsning med samma knapp.
 - **Plantrad:** välj växt + antal (t.ex. 20 rädisor) → drag in i box; handtag för rotation (snap 15°/90°);
   dra i änden för att ändra antal; högerklick → komprimera/duplicera/ta bort.
 - **Flytta allt med drag & drop**, Ctrl+Z ångra, Delete tar bort markerat.
