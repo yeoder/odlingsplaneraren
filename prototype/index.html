@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Odlingsplaneraren</title>
+<style>
+  :root {
+    --bg: #f4f1ea; --panel: #ffffff; --border: #d8d2c4;
+    --soil: #8d6e63; --path: #cfc8b8; --empty: #efe9dc;
+    --text: #3e3a33; --accent: #4e7a3a;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: system-ui, sans-serif; background: var(--bg); color: var(--text); }
+  header { background: var(--accent); color: #fff; padding: 10px 18px; display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap; }
+  header h1 { font-size: 1.15rem; margin: 0; }
+  header .frost { font-size: .85rem; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  header input { border: none; border-radius: 4px; padding: 3px 6px; }
+  header input[type=number] { width: 55px; }
+  main { display: grid; grid-template-columns: 240px 1fr 300px; gap: 12px; padding: 12px; align-items: start; }
+  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 12px; }
+  .panel h2 { font-size: .95rem; margin: 0 0 8px; }
+  .tools button, .plantbtn {
+    display: flex; align-items: center; gap: 8px; width: 100%; text-align: left;
+    margin: 3px 0; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px;
+    background: #faf8f3; cursor: pointer; font-size: .85rem;
+  }
+  .tools button.active, .plantbtn.active { outline: 2px solid var(--accent); background: #eaf2e3; }
+  .plantbtn .swatch { width: 14px; height: 14px; border-radius: 50%; flex: none; }
+  .plantbtn small { margin-left: auto; color: #8a8371; }
+  .sizerow { display: flex; gap: 6px; align-items: center; font-size: .8rem; margin: 6px 0; }
+  .sizerow input { width: 55px; padding: 3px; border: 1px solid var(--border); border-radius: 4px; }
+  #canvaswrap { overflow: auto; }
+  #garden {
+    position: relative; background: var(--empty); border: 2px solid var(--border);
+    background-image: linear-gradient(#0001 1px, transparent 1px), linear-gradient(90deg, #0001 1px, transparent 1px);
+  }
+  .bed, .gang { position: absolute; border-radius: 4px; }
+  .bed { background: var(--soil); box-shadow: inset 0 0 0 2px #6d4c41; cursor: crosshair; }
+  .gang { background: var(--path); background-image: repeating-linear-gradient(45deg, #0002 0 5px, #0000 5px 10px); }
+  .bed .lbl, .gang .lbl { position: absolute; top: 2px; left: 5px; font-size: 10px; color: #fff8; pointer-events: none; }
+  .ghost { position: absolute; border: 2px dashed var(--accent); background: #4e7a3a22; pointer-events: none; border-radius: 4px; display: none; }
+  .plant {
+    position: absolute; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+    cursor: pointer; box-shadow: 0 1px 3px #0004; border: 2px solid #fff8;
+  }
+  .plant.warn { border: 2px solid #ffd600; box-shadow: 0 0 6px #ffd600; }
+  .plant.bad  { border: 2px solid #d32f2f; box-shadow: 0 0 6px #d32f2f; }
+  #warnings li { font-size: .8rem; margin: 4px 0; }
+  #warnings li.bad { color: #b3402a; }
+  #warnings li.tight { color: #a07800; }
+  #warnings li.good { color: #4e7a3a; }
+  #schedule table { border-collapse: collapse; width: 100%; font-size: .78rem; }
+  #schedule td, #schedule th { border-bottom: 1px solid var(--border); padding: 3px 5px; text-align: left; }
+  #schedule td:first-child { white-space: nowrap; font-weight: 600; }
+  .hint { font-size: .75rem; color: #77705f; margin-top: 6px; }
+  .rowbtns { display: flex; gap: 6px; margin-top: 8px; }
+  .rowbtns button { flex: 1; font-size: .75rem; padding: 4px; border: 1px solid var(--border); border-radius: 5px; background: #faf8f3; cursor: pointer; }
+  .legend { font-size: .75rem; margin-top: 8px; color: #77705f; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🌱 Odlingsplaneraren</h1>
+  <div class="frost">
+    Plats: <input type="number" id="gw" value="8" min="1" max="100" step="0.5"> ×
+    <input type="number" id="gh" value="5" min="1" max="100" step="0.5"> m &nbsp;|&nbsp;
+    Sista vårfrost: <input type="date" id="frostDate" value="2026-05-15">
+  </div>
+</header>
+<main>
+  <div class="panel tools">
+    <h2>Odlingsruta / gång</h2>
+    <div class="sizerow">
+      <label>B <input type="number" id="bw" value="1.2" step="0.1" min="0.2"> m</label>
+      <label>L <input type="number" id="bh" value="2.4" step="0.1" min="0.2"> m</label>
+    </div>
+    <button data-tool="bed" class="active">🟫 Placera odlingsruta</button>
+    <button data-tool="gang">▨ Placera gång</button>
+    <button data-tool="erase">🗑 Ta bort (klicka objekt)</button>
+
+    <h2 style="margin-top:12px">Växter</h2>
+    <div id="plantlist"></div>
+    <div class="rowbtns">
+      <button id="saveBtn">💾 Spara fil</button>
+      <button id="clearBtn">🗑 Rensa allt</button>
+    </div>
+    <p class="hint">Välj storlek och klicka på planen för att placera en ruta/gång. Välj sedan växt och klicka i en odlingsruta – varje växt tar sin verkliga plats. Klicka på en växt för att ta bort den.</p>
+  </div>
+
+  <div class="panel">
+    <h2>Trädgården <span id="scaleinfo" class="legend"></span></h2>
+    <div id="canvaswrap"><div id="garden"><div class="ghost" id="ghost"></div></div></div>
+    <div class="legend">Rutnätet på planen = 0,5 m. Gul ring = trångt (går, men inte optimalt) · Röd ring = konflikt.</div>
+  </div>
+
+  <div>
+    <div class="panel" style="margin-bottom:12px">
+      <h2>Varningar & tips</h2>
+      <ul id="warnings"></ul>
+    </div>
+    <div class="panel" id="schedule">
+      <h2>Årsschema</h2>
+      <div id="schedulebody"></div>
+    </div>
+  </div>
+</main>
+
+<script src="plants.js"></script>
+<script>
+const plantById = Object.fromEntries(PLANTS.map(p => [p.id, p]));
+const TIGHT_LIMIT = 0.8;   // ner till 80 % av rek. avstånd ⇒ tillåtet med varning ("10–20 % för trångt")
+
+// ---------- State (alla mått i meter) ----------
+let state = JSON.parse(localStorage.getItem("garden_m") || "null") || {
+  gw: 8, gh: 5,
+  beds: [],    // {id, typ:"bed"|"gang", x, y, w, h}
+  plants: []   // {id, plantId, bedId, x, y}  (x,y = mittpunkt, meter)
+};
+let nextId = state.beds.concat(state.plants).reduce((m, o) => Math.max(m, o.id || 0), 0) + 1;
+
+let tool = "bed", selectedPlant = null;
+let SCALE = 100; // px per meter, räknas om
+
+const garden = document.getElementById("garden");
+const ghost = document.getElementById("ghost");
+
+// ---------- Verktyg & växtlista ----------
+document.querySelectorAll(".tools button[data-tool]").forEach(b => {
+  b.onclick = () => {
+    tool = b.dataset.tool; selectedPlant = null;
+    document.querySelectorAll("[data-tool], .plantbtn").forEach(x => x.classList.remove("active"));
+    b.classList.add("active");
+  };
+});
+const plantlist = document.getElementById("plantlist");
+PLANTS.forEach(p => {
+  const b = document.createElement("button");
+  b.className = "plantbtn";
+  b.innerHTML = `<span class="swatch" style="background:${p.farg}"></span>${p.symbol} ${p.namn}<small>ø${p.avstand_cm} cm</small>`;
+  b.onclick = () => {
+    selectedPlant = p.id; tool = null;
+    document.querySelectorAll("[data-tool], .plantbtn").forEach(x => x.classList.remove("active"));
+    b.classList.add("active");
+  };
+  plantlist.appendChild(b);
+});
+
+// ---------- Geometri-hjälp ----------
+function m2px(m) { return m * SCALE; }
+function evPos(e) {
+  const r = garden.getBoundingClientRect();
+  return { x: (e.clientX - r.left) / SCALE, y: (e.clientY - r.top) / SCALE };
+}
+function bedAt(x, y) {
+  return state.beds.find(b => b.typ === "bed" && x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h);
+}
+function anyRectAt(x, y) {
+  return state.beds.find(b => x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h);
+}
+function radius(p) { return plantById[p.plantId].avstand_cm / 200; } // m (diameter = avstånd)
+
+// Hur väl får plantan plats? returnerar { ratio, mot } där ratio = faktiskt/rekommenderat avstånd (min över alla begränsningar)
+function fitCheck(plantId, x, y, bed, ignoreId) {
+  const r = plantById[plantId].avstand_cm / 200;
+  let ratio = Infinity, mot = null;
+  // avstånd till bäddkant
+  const edge = Math.min(x - bed.x, bed.x + bed.w - x, y - bed.y, bed.y + bed.h - y);
+  if (edge / r < ratio) { ratio = edge / r; mot = "kanten"; }
+  // avstånd till andra plantor
+  for (const q of state.plants) {
+    if (q.id === ignoreId) continue;
+    const need = r + radius(q);
+    const d = Math.hypot(q.x - x, q.y - y);
+    if (d / need < ratio) { ratio = d / need; mot = plantById[q.plantId].namn; }
+  }
+  return { ratio, mot };
+}
+
+// ---------- Placering ----------
+garden.addEventListener("mousemove", e => {
+  if (tool !== "bed" && tool !== "gang") { ghost.style.display = "none"; return; }
+  const { x, y } = evPos(e);
+  const w = +document.getElementById("bw").value, h = +document.getElementById("bh").value;
+  ghost.style.display = "block";
+  ghost.style.left = m2px(x - w / 2) + "px"; ghost.style.top = m2px(y - h / 2) + "px";
+  ghost.style.width = m2px(w) + "px"; ghost.style.height = m2px(h) + "px";
+});
+garden.addEventListener("mouseleave", () => ghost.style.display = "none");
+
+garden.addEventListener("click", e => {
+  const { x, y } = evPos(e);
+
+  if (tool === "bed" || tool === "gang") {
+    const w = +document.getElementById("bw").value, h = +document.getElementById("bh").value;
+    let bx = Math.min(Math.max(x - w / 2, 0), state.gw - w);
+    let by = Math.min(Math.max(y - h / 2, 0), state.gh - h);
+    if (w > state.gw || h > state.gh) { alert("Rutan är större än platsen."); return; }
+    state.beds.push({ id: nextId++, typ: tool, x: bx, y: by, w, h });
+    render(); return;
+  }
+
+  if (tool === "erase") {
+    // växt först, annars ruta/gång
+    const pi = state.plants.findIndex(p => Math.hypot(p.x - x, p.y - y) <= Math.max(radius(p), 0.06));
+    if (pi >= 0) { state.plants.splice(pi, 1); render(); return; }
+    const b = anyRectAt(x, y);
+    if (b) {
+      state.plants = state.plants.filter(p => p.bedId !== b.id);
+      state.beds = state.beds.filter(x2 => x2.id !== b.id);
+      render();
+    }
+    return;
+  }
+
+  if (selectedPlant) {
+    const bed = bedAt(x, y);
+    if (!bed) return;
+    const { ratio, mot } = fitCheck(selectedPlant, x, y, bed, null);
+    if (ratio < TIGHT_LIMIT) {
+      alert(`För trångt! ${plantById[selectedPlant].namn} behöver ${plantById[selectedPlant].avstand_cm} cm – här blir det bara ${Math.round(ratio * 100)} % av det (mot ${mot}).`);
+      return;
+    }
+    state.plants.push({ id: nextId++, plantId: selectedPlant, bedId: bed.id, x, y });
+    render();
+  }
+});
+
+// Ta bort växt genom att klicka på den (när ingen ritverktygsläge)
+function plantClick(ev, id) {
+  ev.stopPropagation();
+  if (tool === "erase" || (!selectedPlant && !tool)) {
+    state.plants = state.plants.filter(p => p.id !== id); render();
+  } else if (selectedPlant || tool) {
+    // vid aktivt verktyg: klick på växt tar också bort den med erase, annars ignorera
+    if (tool === "erase") { state.plants = state.plants.filter(p => p.id !== id); render(); }
+  }
+}
+
+// ---------- Varningar ----------
+function computeWarnings() {
+  const msgs = new Map(), status = {}; // plant.id -> "warn"|"bad"
+  const lvl = ["låg", "medel", "hög"];
+  for (const p of state.plants) {
+    const P = plantById[p.plantId];
+    // trängsel
+    const bed = state.beds.find(b => b.id === p.bedId);
+    if (bed) {
+      const { ratio, mot } = fitCheck(p.plantId, p.x, p.y, bed, p.id);
+      if (ratio < 1 && ratio >= TIGHT_LIMIT) {
+        status[p.id] = "warn";
+        msgs.set(`⚠ ${P.namn} står trångt (${Math.round(ratio * 100)} % av rek. avstånd, mot ${mot}).`, "tight");
+      } else if (ratio < TIGHT_LIMIT) {
+        status[p.id] = "bad";
+        msgs.set(`⛔ ${P.namn} har alldeles för lite plats (${Math.round(ratio * 100)} %).`, "bad");
+      }
+    }
+    // grannar inom 60 cm ⇒ kompanjonskontroll
+    for (const q of state.plants) {
+      if (q.id <= p.id) continue;
+      const Q = plantById[q.plantId];
+      if (Math.hypot(q.x - p.x, q.y - p.y) > 0.6) continue;
+      if (P.daliga_grannar.includes(Q.id) || Q.daliga_grannar.includes(P.id)) {
+        status[p.id] = status[q.id] = "bad";
+        msgs.set(`⛔ ${P.namn} + ${Q.namn}: dåliga grannar – flytta isär.`, "bad");
+      } else if (P.id !== Q.id && (P.bra_grannar.includes(Q.id) || Q.bra_grannar.includes(P.id))) {
+        msgs.set(`✓ ${P.namn} + ${Q.namn}: bra kombination!`, "good");
+      }
+      if (P.id !== Q.id && Math.abs(lvl.indexOf(P.vattenbehov) - lvl.indexOf(Q.vattenbehov)) === 2) {
+        status[p.id] = status[p.id] || "warn"; status[q.id] = status[q.id] || "warn";
+        msgs.set(`⚠ ${P.namn} (${P.vattenbehov} vatten) + ${Q.namn} (${Q.vattenbehov}): olika vattningsbehov.`, "tight");
+      }
+    }
+  }
+  const ul = document.getElementById("warnings");
+  ul.innerHTML = msgs.size ? "" : "<li>Inga varningar ännu – plantera något!</li>";
+  msgs.forEach((cls, msg) => {
+    const li = document.createElement("li"); li.textContent = msg; li.className = cls; ul.appendChild(li);
+  });
+  return status;
+}
+
+// ---------- Årsschema ----------
+function addWeeks(dateStr, w) { const d = new Date(dateStr); d.setDate(d.getDate() + Math.round(w * 7)); return d; }
+function fmt(d) { return d.toLocaleDateString("sv-SE", { day: "numeric", month: "short" }); }
+function computeSchedule() {
+  const frost = document.getElementById("frostDate").value;
+  const used = [...new Set(state.plants.map(p => p.plantId))];
+  const events = [];
+  used.forEach(id => {
+    const p = plantById[id];
+    let outDate;
+    if (p.forsa_veckor_fore_frost != null) {
+      events.push({ d: addWeeks(frost, -p.forsa_veckor_fore_frost), t: `Förså ${p.namn} inomhus` });
+      outDate = addWeeks(frost, p.plantera_ut_veckor_efter_frost || 0);
+      events.push({ d: outDate, t: `Plantera ut ${p.namn} (kräver ≥ ${p.min_utetemp}°C ute)` });
+    } else {
+      outDate = addWeeks(frost, -(p.direktsadd_veckor_fore_frost || 0));
+      events.push({ d: outDate, t: `Direktså ${p.namn} (jordtemp ≥ ${p.min_utetemp}°C)` });
+    }
+    const skord = new Date(outDate); skord.setDate(skord.getDate() + p.dagar_till_skord);
+    events.push({ d: skord, t: `Skörda ${p.namn} (ca)` });
+  });
+  events.sort((a, b) => a.d - b.d);
+  const el = document.getElementById("schedulebody");
+  if (!events.length) { el.innerHTML = "<p class='hint'>Plantera växter så byggs schemat automatiskt.</p>"; return; }
+  el.innerHTML = "<table><tr><th>Datum</th><th>Att göra</th></tr>" +
+    events.map(e => `<tr><td>${fmt(e.d)}</td><td>${e.t}</td></tr>`).join("") + "</table>";
+}
+
+// ---------- Render ----------
+function render() {
+  state.gw = +document.getElementById("gw").value;
+  state.gh = +document.getElementById("gh").value;
+  const maxW = Math.max(400, document.getElementById("canvaswrap").clientWidth - 4);
+  SCALE = Math.min(maxW / state.gw, 560 / state.gh);
+  garden.style.width = m2px(state.gw) + "px";
+  garden.style.height = m2px(state.gh) + "px";
+  garden.style.backgroundSize = m2px(0.5) + "px " + m2px(0.5) + "px";
+  document.getElementById("scaleinfo").textContent = ` — ${state.gw} × ${state.gh} m`;
+
+  garden.querySelectorAll(".bed, .gang, .plant").forEach(el => el.remove());
+
+  for (const b of state.beds) {
+    const d = document.createElement("div");
+    d.className = b.typ;
+    d.style.left = m2px(b.x) + "px"; d.style.top = m2px(b.y) + "px";
+    d.style.width = m2px(b.w) + "px"; d.style.height = m2px(b.h) + "px";
+    d.innerHTML = `<span class="lbl">${b.w}×${b.h} m</span>`;
+    garden.appendChild(d);
+  }
+
+  const status = computeWarnings();
+  for (const p of state.plants) {
+    const P = plantById[p.plantId];
+    const rpx = Math.max(m2px(radius(p)), 8);
+    const d = document.createElement("div");
+    d.className = "plant" + (status[p.id] ? " " + status[p.id] : "");
+    d.style.left = (m2px(p.x) - rpx) + "px"; d.style.top = (m2px(p.y) - rpx) + "px";
+    d.style.width = d.style.height = rpx * 2 + "px";
+    d.style.background = P.farg;
+    d.style.fontSize = Math.max(rpx, 10) + "px";
+    d.textContent = P.symbol;
+    d.title = `${P.namn} – rek. avstånd ${P.avstand_cm} cm`;
+    d.onclick = ev => plantClick(ev, p.id);
+    garden.appendChild(d);
+  }
+
+  computeSchedule();
+  localStorage.setItem("garden_m", JSON.stringify(state));
+}
+
+document.getElementById("gw").onchange = render;
+document.getElementById("gh").onchange = render;
+document.getElementById("frostDate").onchange = computeSchedule;
+document.getElementById("saveBtn").onclick = () => {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([JSON.stringify(state, null, 2)], { type: "application/json" }));
+  a.download = "min-tradgard.json"; a.click();
+};
+document.getElementById("clearBtn").onclick = () => {
+  if (confirm("Rensa hela trädgården?")) { state.beds = []; state.plants = []; render(); }
+};
+window.addEventListener("resize", render);
+render();
+</script>
+</body>
+</html>

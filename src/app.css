@@ -1,0 +1,14 @@
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: system-ui, sans-serif;
+  background: #f4f1ea;
+  color: #3e3a33;
+}
+html, body, #app {
+  height: 100%;
+}
+#app {
+  display: flex;
+  flex-direction: column;
+}
