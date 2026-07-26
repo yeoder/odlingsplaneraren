@@ -16,6 +16,10 @@
   // plantering
   let selectedPlantId: string | null = null;
   let rowCount = 10;
+  let plantFilter = "";
+  $: filteredPlants = plantFilter.trim()
+    ? PLANTS.filter(p => p.namn.toLowerCase().includes(plantFilter.trim().toLowerCase()))
+    : PLANTS;
 
   function applySize() {
     garden.widthCm = snap(Math.max(100, widthM * 100));
@@ -87,23 +91,27 @@
 
 <main>
   <aside>
-    <h2>Växter</h2>
-    <label class="countrow">Antal i raden:
-      <input type="number" bind:value={rowCount} min="1" max="200" on:change={countChanged} />
-    </label>
+    <div class="asidehead">
+      <h2>Växter</h2>
+      <input class="search" type="search" placeholder="Sök växt…" bind:value={plantFilter} />
+      <label class="countrow">Antal i raden:
+        <input type="number" bind:value={rowCount} min="1" max="200" on:change={countChanged} />
+      </label>
+    </div>
     <div class="plantlist">
-      {#each PLANTS as p}
+      {#each filteredPlants as p}
         <button class="plantbtn" class:active={selectedPlantId === p.id} on:click={() => pickPlant(p.id)}>
           <span class="swatch" style="background:{p.farg}"></span>
           <span class="pname">{p.symbol} {p.namn}</span>
           <small>ø{p.avstand_cm} cm</small>
         </button>
+      {:else}
+        <p class="asidehint">Ingen växt matchar "{plantFilter}".</p>
       {/each}
     </div>
     <p class="asidehint">
-      Välj växt → klicka i en odlingsruta. Raden läggs med rätt avstånd mellan plantorna.
-      <b>R</b> roterar innan placering. Är boxen något för kort komprimeras raden automatiskt
-      (max 20 %) och märks med ⚠. Dra rader för att flytta, högerklicka för meny.
+      Välj växt → klicka i en odlingsruta. <b>R</b> roterar innan placering. Är boxen något
+      för kort komprimeras raden automatiskt (max 20 %) och märks med ⚠.
     </p>
   </aside>
   <GardenCanvas bind:this={canvas} {garden} onchange={onCanvasChange} />
@@ -133,21 +141,30 @@
   main { flex: 1; padding: 12px; min-height: 0; display: flex; gap: 12px; }
   aside {
     width: 220px; flex: none; background: #fff; border: 1px solid #d8d2c4;
-    border-radius: 8px; padding: 12px; overflow-y: auto;
+    border-radius: 8px; padding: 12px; display: flex; flex-direction: column; min-height: 0;
   }
   aside h2 { font-size: 0.95rem; margin: 0 0 8px; }
+  .asidehead { flex: none; }
+  .search {
+    width: 100%; border: 1px solid #d8d2c4; border-radius: 4px; padding: 5px 8px;
+    margin-bottom: 8px; font-size: 0.83rem; box-sizing: border-box;
+  }
   .countrow { display: flex; align-items: center; gap: 8px; font-size: 0.82rem; margin-bottom: 8px; }
   .countrow input { width: 60px; border: 1px solid #d8d2c4; border-radius: 4px; padding: 4px 6px; }
-  .plantlist { display: flex; flex-direction: column; }
+  .plantlist {
+    display: flex; flex-direction: column; flex: 1; min-height: 60px;
+    overflow-y: auto; border-top: 1px solid #eee5d3; border-bottom: 1px solid #eee5d3;
+    padding: 4px 0; margin-bottom: 8px;
+  }
   .plantbtn {
     display: flex; align-items: center; gap: 8px; width: 100%; text-align: left;
     margin: 2px 0; padding: 6px 8px; border: 1px solid #d8d2c4; border-radius: 6px;
-    background: #faf8f3; cursor: pointer; font-size: 0.83rem;
+    background: #faf8f3; cursor: pointer; font-size: 0.83rem; flex: none;
   }
   .plantbtn:hover { background: #eaf2e3; }
   .plantbtn.active { outline: 2px solid #4e7a3a; background: #eaf2e3; }
   .swatch { width: 13px; height: 13px; border-radius: 50%; flex: none; }
   .pname { flex: 1; }
   .plantbtn small { color: #8a8371; }
-  .asidehint { font-size: 0.72rem; color: #77705f; line-height: 1.4; }
+  .asidehint { font-size: 0.72rem; color: #77705f; line-height: 1.4; flex: none; }
 </style>
