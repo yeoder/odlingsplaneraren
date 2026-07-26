@@ -1,7 +1,7 @@
 <script lang="ts">
   import GardenCanvas from "./lib/GardenCanvas.svelte";
   import { loadGarden, saveGarden, snap } from "./lib/model";
-  import { PLANTS } from "./lib/plants";
+  import { PLANTS, plantById, plantsPerM2, type Plant } from "./lib/plants";
 
   const garden = loadGarden();
   let canvas: GardenCanvas;
@@ -56,6 +56,23 @@
     // avmarkera växtknappen när placeringen avslutas via Esc/Klar
     if (!canvas.isPlacingRow()) selectedPlantId = null;
   }
+
+  // infokort
+  let infoPlantId: string | null = null;
+  $: infoPlant = infoPlantId ? plantById[infoPlantId] : null;
+
+  const SOL_TEXT: Record<Plant["solbehov"], string> = {
+    sol: "Full sol", halvskugga: "Halvskugga", skugga: "Skugga",
+  };
+  const VATTEN_TEXT: Record<Plant["vattenbehov"], string> = {
+    "låg": "Lite", "medel": "Måttligt", "hög": "Mycket",
+  };
+  function densityText(avstandCm: number): string {
+    const perM2 = plantsPerM2(avstandCm);
+    if (perM2 >= 1) return `${Math.round(perM2 * 10) / 10} st/m²`;
+    const areaPerPlant = Math.round((1 / perM2) * 10) / 10;
+    return `1 st/${areaPerPlant} m²`;
+  }
 </script>
 
 <header>
@@ -100,11 +117,15 @@
     </div>
     <div class="plantlist">
       {#each filteredPlants as p}
-        <button class="plantbtn" class:active={selectedPlantId === p.id} on:click={() => pickPlant(p.id)}>
-          <span class="swatch" style="background:{p.farg}"></span>
-          <span class="pname">{p.symbol} {p.namn}</span>
-          <small>ø{p.avstand_cm} cm</small>
-        </button>
+        <div class="plantrow">
+          <button class="plantbtn" class:active={selectedPlantId === p.id} on:click={() => pickPlant(p.id)}>
+            <span class="swatch" style="background:{p.farg}"></span>
+            <span class="pname">{p.symbol} {p.namn}</span>
+            <small>ø{p.avstand_cm} cm</small>
+          </button>
+          <button class="infobtn" on:click={() => infoPlantId = p.id}
+                  title="Mer info om {p.namn}" aria-label="Mer info om {p.namn}">ⓘ</button>
+        </div>
       {:else}
         <p class="asidehint">Ingen växt matchar "{plantFilter}".</p>
       {/each}
@@ -116,6 +137,56 @@
   </aside>
   <GardenCanvas bind:this={canvas} {garden} onchange={onCanvasChange} />
 </main>
+
+<svelte:window on:keydown={(e) => { if (infoPlantId && e.key === "Escape") infoPlantId = null; }} />
+
+{#if infoPlant}
+  <div class="modal-backdrop" on:click={() => infoPlantId = null}>
+    <div class="modal-card" on:click|stopPropagation>
+      <button class="modal-close" on:click={() => infoPlantId = null} aria-label="Stäng">✕</button>
+      <div class="modal-head">
+        <span class="modal-icon" style="background:{infoPlant.farg}22">{infoPlant.symbol}</span>
+        <h3>{infoPlant.namn}</h3>
+      </div>
+      <p class="modal-desc">{infoPlant.beskrivning}</p>
+      <div class="statgrid">
+        <div class="stat"><span class="statlabel">☀️ Sol</span><span>{SOL_TEXT[infoPlant.solbehov]}</span></div>
+        <div class="stat"><span class="statlabel">💧 Vatten</span><span>{VATTEN_TEXT[infoPlant.vattenbehov]}</span></div>
+        <div class="stat"><span class="statlabel">⛰️ Jord</span><span>{infoPlant.jord}</span></div>
+        <div class="stat"><span class="statlabel">📏 Täthet</span><span>{densityText(infoPlant.avstand_cm)}</span></div>
+        <div class="stat">
+          <span class="statlabel">⚖️ Skörd</span>
+          <span>{infoPlant.skord_kg_per_m2 != null ? `${infoPlant.skord_kg_per_m2} kg/m²` : "Prydnadsväxt"}</span>
+        </div>
+        <div class="stat"><span class="statlabel">🕐 Skördetid</span><span>~{infoPlant.dagar_till_skord} dagar</span></div>
+      </div>
+      {#if infoPlant.bra_grannar.length}
+        <div class="companions">
+          <h4 class="good">👍 Bra grannar</h4>
+          <div class="tags">
+            {#each infoPlant.bra_grannar as id}
+              {#if plantById[id]}
+                <button class="tag" on:click={() => infoPlantId = id}>{plantById[id].symbol} {plantById[id].namn}</button>
+              {/if}
+            {/each}
+          </div>
+        </div>
+      {/if}
+      {#if infoPlant.daliga_grannar.length}
+        <div class="companions">
+          <h4 class="bad">👎 Dåliga grannar</h4>
+          <div class="tags">
+            {#each infoPlant.daliga_grannar as id}
+              {#if plantById[id]}
+                <button class="tag" on:click={() => infoPlantId = id}>{plantById[id].symbol} {plantById[id].namn}</button>
+              {/if}
+            {/each}
+          </div>
+        </div>
+      {/if}
+    </div>
+  </div>
+{/if}
 
 <style>
   header {
@@ -156,15 +227,59 @@
     overflow-y: auto; border-top: 1px solid #eee5d3; border-bottom: 1px solid #eee5d3;
     padding: 4px 0; margin-bottom: 8px;
   }
+  .plantrow { display: flex; align-items: stretch; gap: 4px; margin: 2px 0; flex: none; }
   .plantbtn {
-    display: flex; align-items: center; gap: 8px; width: 100%; text-align: left;
-    margin: 2px 0; padding: 6px 8px; border: 1px solid #d8d2c4; border-radius: 6px;
-    background: #faf8f3; cursor: pointer; font-size: 0.83rem; flex: none;
+    display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; text-align: left;
+    padding: 6px 8px; border: 1px solid #d8d2c4; border-radius: 6px;
+    background: #faf8f3; cursor: pointer; font-size: 0.83rem;
   }
   .plantbtn:hover { background: #eaf2e3; }
   .plantbtn.active { outline: 2px solid #4e7a3a; background: #eaf2e3; }
   .swatch { width: 13px; height: 13px; border-radius: 50%; flex: none; }
-  .pname { flex: 1; }
-  .plantbtn small { color: #8a8371; }
+  .pname { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .plantbtn small { color: #8a8371; flex: none; }
+  .infobtn {
+    flex: none; width: 24px; border: 1px solid #d8d2c4; border-radius: 50%;
+    background: #faf8f3; cursor: pointer; font-size: 0.8rem; color: #8a8371; line-height: 1;
+  }
+  .infobtn:hover { background: #4e7a3a; color: #fff; border-color: #4e7a3a; }
   .asidehint { font-size: 0.72rem; color: #77705f; line-height: 1.4; flex: none; }
+
+  .modal-backdrop {
+    position: fixed; inset: 0; background: #2e2a2288; z-index: 100;
+    display: flex; align-items: center; justify-content: center; padding: 20px;
+  }
+  .modal-card {
+    position: relative; background: #fff; border-radius: 12px; padding: 20px;
+    width: 360px; max-width: 100%; max-height: 85vh; overflow-y: auto;
+    box-shadow: 0 8px 32px #0004;
+  }
+  .modal-close {
+    position: absolute; top: 12px; right: 12px; border: none; background: none;
+    font-size: 1rem; cursor: pointer; color: #8a8371; width: 28px; height: 28px; border-radius: 50%;
+  }
+  .modal-close:hover { background: #f4f1ea; }
+  .modal-head { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+  .modal-icon {
+    width: 44px; height: 44px; border-radius: 50%; display: flex; align-items: center;
+    justify-content: center; font-size: 1.4rem; flex: none;
+  }
+  .modal-head h3 { margin: 0; font-size: 1.15rem; }
+  .modal-desc { font-size: 0.85rem; color: #5a5648; line-height: 1.5; margin: 0 0 14px; }
+  .statgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 14px; }
+  .stat {
+    background: #faf8f3; border: 1px solid #eee5d3; border-radius: 8px;
+    padding: 7px 10px; font-size: 0.83rem; display: flex; flex-direction: column; gap: 2px;
+  }
+  .statlabel { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.03em; color: #8a8371; }
+  .companions { margin-top: 10px; }
+  .companions h4 { font-size: 0.8rem; margin: 0 0 6px; }
+  .companions h4.good { color: #2e5d1e; }
+  .companions h4.bad { color: #b3402a; }
+  .tags { display: flex; flex-wrap: wrap; gap: 6px; }
+  .tag {
+    border: 1px solid #d8d2c4; border-radius: 20px; background: #faf8f3;
+    padding: 4px 10px; font-size: 0.78rem; cursor: pointer;
+  }
+  .tag:hover { background: #eaf2e3; }
 </style>
