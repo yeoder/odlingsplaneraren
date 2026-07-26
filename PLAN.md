@@ -64,6 +64,10 @@ Plant       { id, namn, familj, avstand_cm, hojd_cm, vattenbehov, sol, tider...,
 2. **Verktyg/växtbibliotek** (vänster): sök, växter med färg + ø-avstånd.
 3. **Varningar & tips** (höger): klick på varning markerar objektet i ritytan.
 4. **Årsschema** (flik): genereras från frostdatum + planterade växter; export till fil.
+   - **Veckobaserat, inte datum.** Åtgärder grupperas per vecka och typ:
+     `V 12 — Förså: tomat, basilika · Direktså: rädisa`
+   - **Ingen skörd i schemat** — man skördar när man ser att det är färdigt.
+     (`dagar_till_skord` behålls i växtdatan som upplysning per växt, men genererar inga schemarader.)
 
 ## Milstolpar
 - **M0 — Projektskelett:** Svelte + Vite + Konva igång, rityta med 5 cm-grid. Publikt repo på GitHub + Pages-deploy (appen ligger live från dag 1).
