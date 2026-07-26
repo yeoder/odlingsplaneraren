@@ -82,6 +82,25 @@ Plant       { id, namn, familj, avstand_cm, hojd_cm, vattenbehov, sol, tider...,
 - **M4 — Sol & skugga:** riktning, höjder, skuggzoner morgon/middag/kväll.
 - **M5 — Årsschema & finputs:** kalender, export/import av trädgårdsfil, ångra/gör om, PWA (offline + installerbar).
 
+## Idéer värda att ta efter (från odlis.se)
+Odlis är en **guide som genererar en plan åt användaren** (ort → ytor → grödor → färdig plan).
+Vår app är ett **ritverktyg där man placerar exakt** — olika produkter, men några av deras
+grepp löser problem vi ändå har:
+
+1. **Ort → klimatzon → frostdatum** (hög prioritet). Användaren söker sin ort och får zon +
+   sista frost automatiskt, istället för att behöva veta sitt frostdatum. Ren uppslagstabell,
+   ingen AI. Löser den enskilt viktigaste inputen för hela schemat (M5).
+2. **Säsongskarta** — 12-månadersrutnät med färgade staplar per gröda
+   (inomhussådd / direktsådd / utplantering). Visuellt komplement till veckolistan.
+   OBS: skörd ska INTE vara med hos oss, enligt beslut ovan.
+3. **"Denna vecka"-widget** — vad ska jag göra just nu, framhävt.
+4. **Kategorifilter i växtlistan** (fruktgrönsaker, kålväxter, kryddor, lökväxter) — vi har
+   redan `familj` i växtdatan och 39 växter gör listan lång.
+5. **Estimerad totalskörd** för hela odlingen — vi har `skord_kg_per_m2`, summera per box/plan.
+6. **Standardmått som snabbval** — pallkrage 120×80 m.fl. istället för att skriva mått varje gång.
+
+Endast koncept/UX är av intresse — deras texter, växtdata och sortförslag är deras eget innehåll.
+
 ## Växtdatabasen
 Ligger kvar som egen JSON (dagens `plants.js` konverteras). Utökas löpande med fler växter;
 fälten är redan definierade (avstånd, höjd, vatten, sol, tider relativt sista frost, grannar).
