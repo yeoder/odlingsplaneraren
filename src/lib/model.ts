@@ -41,6 +41,30 @@ export function snap(cm: number): number {
   return Math.round(cm / GRID_CM) * GRID_CM;
 }
 
+// Komprimering: hur tätt en plantrad får tryckas ihop (0.8 = 20 % under rek. avstånd)
+export const MIN_COMPRESSION = 0.8;
+
+export interface Rect { x: number; y: number; w: number; h: number }
+
+// Plantradens fotavtryck i cm (rektangel runt mittpunkten, roterad i 90°-steg)
+export function rowRect(r: PlantRow, avstandCm: number): Rect {
+  const L = r.count * avstandCm * r.compression;
+  const W = avstandCm;
+  const vertical = r.rotationDeg % 180 !== 0;
+  const w = vertical ? W : L;
+  const h = vertical ? L : W;
+  return { x: r.x - w / 2, y: r.y - h / 2, w, h };
+}
+
+export function rectsOverlap(a: Rect, b: Rect): boolean {
+  return a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+}
+
+export function rectInside(inner: Rect, outer: Rect): boolean {
+  return inner.x >= outer.x && inner.y >= outer.y &&
+    inner.x + inner.w <= outer.x + outer.w && inner.y + inner.h <= outer.y + outer.h;
+}
+
 export function overlaps(a: Box, b: Box): boolean {
   // kant-mot-kant räknas INTE som överlapp
   return a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
