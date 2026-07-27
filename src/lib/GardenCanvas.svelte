@@ -40,40 +40,6 @@
   // hovertext som följer muspekaren
   let hover = { visible: false, x: 0, y: 0, namn: "", rad1: "", rad2: "", status: "" };
 
-  // --- kompass: definierar vilket håll som är norr på planen ---
-  // Samma vinkel används av skuggberäkningen, så bild och sol kan aldrig glida isär.
-  let kompassEl: HTMLDivElement;
-  let vrider = false;
-
-  function vridTill(e: PointerEvent) {
-    const r = kompassEl.getBoundingClientRect();
-    const mx = r.left + r.width / 2, my = r.top + r.height / 2;
-    // 0° = norr uppåt i bilden, växande medurs
-    const vinkel = (Math.atan2(e.clientX - mx, my - e.clientY) * 180) / Math.PI;
-    garden.sunDirectionDeg = Math.round(((vinkel % 360) + 360) % 360);
-    garden = garden;
-    renderShadows();
-    commit();
-  }
-  function kompassNed(e: PointerEvent) {
-    vrider = true;
-    kompassEl.setPointerCapture(e.pointerId);
-    vridTill(e);
-  }
-  function kompassRor(e: PointerEvent) { if (vrider) vridTill(e); }
-  function kompassUpp(e: PointerEvent) {
-    vrider = false;
-    kompassEl.releasePointerCapture?.(e.pointerId);
-  }
-  function nollstallKompass() {
-    garden.sunDirectionDeg = 0;
-    garden = garden;
-    renderShadows();
-    commit();
-  }
-
-  $: solAzimut = garden.visaSkugga ? aktuellSol().sol : null;
-
   // Egen inmatningsdialog. window.prompt() finns inte i alla miljöer (kastar
   // "prompt() is not supported"), så namngivning och antal görs i appen i stället.
   let dialog: {
@@ -1036,38 +1002,6 @@
 <div class="wrap">
   <div class="canvas" bind:this={container}></div>
 
-  <div class="kompass" bind:this={kompassEl}
-       on:pointerdown={kompassNed} on:pointermove={kompassRor} on:pointerup={kompassUpp}
-       on:dblclick={nollstallKompass}
-       title="Dra för att vrida planen så norr stämmer med verkligheten. Dubbelklick nollställer.">
-    <div class="ros" style="transform: rotate({-garden.sunDirectionDeg}deg)">
-      <span class="v n">N</span><span class="v o">Ö</span>
-      <span class="v s">S</span><span class="v va">V</span>
-      <span class="nal"></span>
-    </div>
-    {#if solAzimut?.uppe && solAzimut.hojdGrader > MIN_SOLHOJD}
-      <!-- solen ritas av ::before, som bär förskjutningen ut mot kanten -->
-      <span class="sol" style="transform: rotate({solAzimut.azimutGrader - garden.sunDirectionDeg}deg)"></span>
-    {/if}
-  </div>
-
-  {#if placing}
-    <div class="placebar">
-      Placerar {placing.typ === "gang" ? "gång" : "odlingsruta"} {placing.w / 100}×{placing.h / 100} m —
-      klicka för att placera · <b>Esc</b> avslutar
-      <button on:click={cancelPlacing}>Klar</button>
-    </div>
-  {/if}
-  {#if placingRow}
-    <div class="placebar">
-      Planterar {placingRow.count} × {plantById[placingRow.plantId].namn}
-      ({plantById[placingRow.plantId].avstand_i_rad_cm} cm i raden,
-       {plantById[placingRow.plantId].radavstand_cm} cm radavstånd) —
-      klicka i en odlingsruta · <b>R</b> roterar · <b>Esc</b> avslutar
-      <button on:click={cancelPlacing}>Klar</button>
-    </div>
-  {/if}
-
   {#if hover.visible && !placing && !placingRow}
     <div class="tooltip" style="left:{hover.x + 14}px; top:{hover.y + 14}px">
       <b>{hover.namn}</b>
@@ -1125,35 +1059,6 @@
   .placebar button {
     border: none; border-radius: 12px; padding: 3px 12px; cursor: pointer;
     background: #fff; color: #2e5d1e; font-weight: 600;
-  }
-  .kompass {
-    position: absolute; top: 10px; right: 10px; z-index: 15;
-    width: 74px; height: 74px; border-radius: 50%;
-    background: #fffffff2; border: 1px solid #d8d2c4; box-shadow: 0 2px 8px #0002;
-    cursor: grab; touch-action: none; user-select: none;
-  }
-  .kompass:active { cursor: grabbing; }
-  .ros { position: absolute; inset: 0; }
-  .ros .v {
-    position: absolute; font-size: 0.66rem; font-weight: 700; color: #8a8371;
-    left: 50%; top: 50%; transform-origin: center;
-  }
-  .ros .n  { transform: translate(-50%, -50%) translateY(-27px); color: #b3402a; }
-  .ros .s  { transform: translate(-50%, -50%) translateY(27px); }
-  .ros .o  { transform: translate(-50%, -50%) translateX(27px); }
-  .ros .va { transform: translate(-50%, -50%) translateX(-27px); }
-  .ros .nal {
-    position: absolute; left: 50%; top: 12px; width: 2px; height: 25px;
-    background: linear-gradient(#b3402a 0 60%, #c9c1ae 60% 100%);
-    transform: translateX(-50%); border-radius: 1px;
-  }
-  .kompass .sol {
-    position: absolute; left: 50%; top: 50%; font-size: 0.8rem;
-    width: 0; height: 0; display: grid; place-items: center;
-    transform-origin: center;
-  }
-  .kompass .sol::before {
-    content: "☀️"; position: absolute; transform: translateY(-30px);
   }
   .tooltip {
     position: absolute; z-index: 20; pointer-events: none;

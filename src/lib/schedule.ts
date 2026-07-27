@@ -73,15 +73,17 @@ export function fardigDatum(p: Plant, frostISO: string): Date {
   return d;
 }
 
-// En gröda rensas sällan bort samma dag den blir färdig — den står kvar ett tag till.
-// Andelen är proportionell mot odlingstiden: en rädisa dras upp snabbt, medan en
-// solros eller tomat får stå kvar i veckor efter att den börjat ge skörd.
-const EFTERPERIOD_ANDEL = 0.3;
-
-/** Datum då grödan antas vara borttagen ur odlingen. */
+/**
+ * Datum då grödan antas vara borttagen ur odlingen.
+ *
+ * dagar_till_skord säger bara när grödan blir färdig, inte hur länge den står kvar,
+ * och skillnaden är stor: en rädisa dras upp direkt medan grönkål står kvar långt in
+ * på vintern och morötter kan tas efterhand hela hösten. Därför har varje växt ett
+ * eget skordeperiod_dagar i stället för en gemensam schablon.
+ */
 export function urJordDatum(p: Plant, frostISO: string): Date {
   const d = fardigDatum(p, frostISO);
-  d.setDate(d.getDate() + Math.round(p.dagar_till_skord * EFTERPERIOD_ANDEL));
+  d.setDate(d.getDate() + (p.skordeperiod_dagar ?? Math.round(p.dagar_till_skord * 0.3)));
   return d;
 }
 

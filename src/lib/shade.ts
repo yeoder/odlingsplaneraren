@@ -56,21 +56,32 @@ export interface SkuggPost {
   farSolNog: boolean;
 }
 
-interface Kastare { rect: Rect; dx: number; dy: number; namn: string }
+interface Kastare { rect: Rect; dx: number; dy: number; namn: string; tathet: number }
 
-/** Andel av rutan som ligger i skugga från någon av kastarna (punktprov). */
+/**
+ * Hur mycket ljus som tas bort över rutan (punktprov).
+ *
+ * Alla bladverk skuggar inte lika. Majs och lök står upprätt och glest — ljus silar
+ * igenom mellan stjälkarna — medan pumpa och kål bildar ett tätt tak. Varje punkt
+ * viktas därför med den tätaste kastarens skuggtäthet i stället för att räknas som
+ * antingen full skugga eller full sol.
+ */
 function skuggadAndel(traffad: Rect, kastare: Kastare[]): number {
   if (kastare.length === 0) return 0;
   const NX = 8, NY = 4;
-  let traffar = 0;
+  let summa = 0;
   for (let ix = 0; ix < NX; ix++) {
     for (let iy = 0; iy < NY; iy++) {
       const px = traffad.x + ((ix + 0.5) / NX) * traffad.w;
       const py = traffad.y + ((iy + 0.5) / NY) * traffad.h;
-      if (kastare.some(k => punktISkugga(px, py, k.rect, k.dx, k.dy))) traffar++;
+      let tatast = 0;
+      for (const k of kastare) {
+        if (k.tathet > tatast && punktISkugga(px, py, k.rect, k.dx, k.dy)) tatast = k.tathet;
+      }
+      summa += tatast;
     }
   }
-  return traffar / (NX * NY);
+  return summa / (NX * NY);
 }
 
 /** Full analys per plantrad: sol och skugga över dygnet, för den värsta säsongen. */
@@ -112,7 +123,10 @@ export function skuggAnalys(garden: Garden): SkuggPost[] {
         const langd = skuggLangdCm(hojd, sol.hojdGrader);
         if (langd < 10) continue;
         const { dx, dy } = skuggOffset(langd, az, garden.sunDirectionDeg);
-        kastare.push({ rect: rowRect(a.row, a.plant), dx, dy, namn: a.plant.namn, rowId: a.row.id });
+        kastare.push({
+          rect: rowRect(a.row, a.plant), dx, dy,
+          namn: a.plant.namn, tathet: a.plant.skuggtathet ?? 0.7, rowId: a.row.id,
+        });
       }
 
       for (const a of aktiva) {
