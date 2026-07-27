@@ -2,13 +2,16 @@
   import { onMount, onDestroy } from "svelte";
   import Konva from "konva";
   import {
-    GRID_CM, MIN_COMPRESSION, snap, overlaps, saveGarden, rowRect, rectsOverlap, rectInside,
+    GRID_CM, MIN_COMPRESSION, MAX_COMPRESSION, snap, overlaps, saveGarden, rowRect,
+    rectsOverlap, rectInside, rotatedBox, rotatedRow, plantHeight,
     type Garden, type Box, type PlantRow, type Rect,
   } from "./model";
   import { plantById } from "./plants";
+  import { formatCm } from "./rules";
 
   export let garden: Garden;
   export let onchange: () => void = () => {};
+  export let onselect: (sel: { kind: "box" | "row"; id: number } | null) => void = () => {};
 
   let container: HTMLDivElement;
   let stage: Konva.Stage;
@@ -28,6 +31,9 @@
 
   // kontextmeny (HTML ovanpå canvasen)
   let menu = { visible: false, x: 0, y: 0, kind: "box" as "box" | "row", id: 0 };
+
+  // hovertext som följer muspekaren
+  let hover = { visible: false, x: 0, y: 0, namn: "", rad1: "", rad2: "", status: "" };
 
   // Under placering stängs panorering av: annars blir minsta musrörelse med knappen nere
   // ett scendrag istället för ett klick, och ingenting placeras.
@@ -66,6 +72,13 @@
     onchange();
   }
 
+  // Konva skickar "click" även för högerknappen, före "contextmenu". Utan den här
+  // spärren hinner klick-hanteraren rita om (och förstöra) gruppen som just
+  // högerklickades, så kontextmenyn aldrig öppnas.
+  function isRightClick(e: Konva.KonvaEventObject<MouseEvent>): boolean {
+    return (e.evt as MouseEvent)?.button === 2;
+  }
+
   // --- validering ---
   function boxValid(b: Box, ignoreId?: number): boolean {
     if (b.x < 0 || b.y < 0 || b.x + b.w > garden.widthCm || b.y + b.h > garden.heightCm) return false;
@@ -76,16 +89,18 @@
 
   // Prova att lägga en rad med mittpunkt nära (cx, cy) i boxen: returnerar justerad rad eller null.
   // Komprimerar automatiskt ner till MIN_COMPRESSION om raden är något för lång för boxen.
+  // `wanted` = önskad avståndsfaktor (>1 = utglesad); krymps om raden inte får plats.
   function fitRow(plantId: string, count: number, rotationDeg: number,
-                  cx: number, cy: number, box: Box, ignoreRowId?: number): PlantRow | null {
+                  cx: number, cy: number, box: Box, ignoreRowId?: number,
+                  wanted = 1): PlantRow | null {
     const d = plantById[plantId].avstand_cm;
     const vertical = rotationDeg % 180 !== 0;
     const along = vertical ? box.h : box.w;   // boxens mått längs raden
     const across = vertical ? box.w : box.h;  // tvärs raden
     if (across < d) return null;              // raden är bredare än boxen
 
-    let compression = 1;
-    if (count * d > along) {
+    let compression = Math.min(Math.max(wanted, MIN_COMPRESSION), MAX_COMPRESSION);
+    if (count * d * compression > along) {
       compression = along / (count * d);
       if (compression < MIN_COMPRESSION) return null; // mer än 20 % för trångt
     }
@@ -212,6 +227,7 @@
     const d = plant.avstand_cm;
     const r = rowRect(row, d);
     const tight = row.compression < 0.999;
+    const spread = row.compression > 1.001;
     const local = opts.ghost ? { x: r.x, y: r.y } : { x: 0, y: 0 }; // riktiga rader ritas i grupp-koordinater
 
     // fotavtryck
@@ -232,6 +248,17 @@
       const off = (i + 0.5) * step - (row.count * step) / 2;
       const px = local.x + r.w / 2 + (vertical ? 0 : off);
       const py = local.y + r.h / 2 + (vertical ? off : 0);
+
+      // Utglesad rad: streckad ring visar utrymmet plantan fått. Själva plantcirkeln
+      // hålls alltid på växtens verkliga fotavtryck – mer plats gör inte plantan större.
+      if (spread && !opts.ghost) {
+        g.add(new Konva.Circle({
+          x: px, y: py, radius: step / 2 * 0.9,
+          stroke: plant.farg, strokeWidth: 1 / stage.scaleX(),
+          dash: [4 / stage.scaleX(), 3 / stage.scaleX()], opacity: 0.5, listening: false,
+        }));
+      }
+
       g.add(new Konva.Circle({
         x: px, y: py, radius,
         fill: plant.farg, opacity: opts.ghost ? 0.5 : 0.9,
@@ -254,6 +281,27 @@
     }
   }
 
+  // Namnskylt bredvid raden — liten, utanför fotavtrycket så den inte skymmer plantorna.
+  function drawRowLabel(g: Konva.Group, row: PlantRow) {
+    const plant = plantById[row.plantId];
+    const r = rowRect(row, plant.avstand_cm);
+    const s = stage.scaleX();
+    const fontSize = 11 / s;
+    const text = `${row.count} × ${plant.namn}`;
+    const padX = 4 / s, padY = 2 / s;
+    const approxW = text.length * fontSize * 0.55 + padX * 2;
+    const label = new Konva.Group({ x: r.w / 2 - approxW / 2, y: -(fontSize + padY * 2 + 3 / s) });
+    label.add(new Konva.Rect({
+      width: approxW, height: fontSize + padY * 2,
+      fill: "#fffffff2", stroke: plant.farg, strokeWidth: 1 / s, cornerRadius: 3 / s,
+    }));
+    label.add(new Konva.Text({
+      x: padX, y: padY, text, fontSize, fill: "#3e3a33",
+    }));
+    label.listening(false);
+    g.add(label);
+  }
+
   function renderRows() {
     rowLayer.destroyChildren();
     for (const row of garden.rows) {
@@ -264,6 +312,7 @@
         x: r.x, y: r.y, draggable: placing === null && placingRow === null,
       });
       drawRowShape(g, row);
+      if (garden.showLabels) drawRowLabel(g, row);
 
       if (selectedRowId === row.id) {
         g.add(new Konva.Rect({
@@ -273,9 +322,17 @@
         }));
       }
 
-      const pct = Math.round(row.compression * 100);
-      const title = `${row.count} × ${plant.namn} · ${plant.avstand_cm} cm` +
-        (row.compression < 0.999 ? ` · komprimerad till ${pct} % — trångt!` : "");
+      const faktisktCm = formatCm(Math.round(plant.avstand_cm * row.compression * 10) / 10);
+      const title = {
+        namn: `${plant.symbol} ${row.count} × ${plant.namn}`,
+        rad1: `Avstånd ${faktisktCm} cm (rek. ${plant.avstand_cm} cm)`,
+        rad2: `Höjd ${plantHeight(garden, plant.id, plant.hojd_cm)} cm`,
+        status: row.compression < 0.999
+          ? `⚠ ${Math.round((1 - row.compression) * 100)} % trängre än rekommenderat`
+          : row.compression > 1.001
+            ? `Utglesad ${Math.round((row.compression - 1) * 100)} %`
+            : "",
+      };
 
       g.dragBoundFunc(function (pos) {
         const s = stage.scaleX();
@@ -292,7 +349,7 @@
         const cx = g.x() + r.w / 2, cy = g.y() + r.h / 2;
         const box = odlingBoxAt(cx, cy);
         const fitted = box
-          ? fitRow(row.plantId, row.count, row.rotationDeg, cx, cy, box, row.id)
+          ? fitRow(row.plantId, row.count, row.rotationDeg, cx, cy, box, row.id, row.compression)
           : null;
         if (fitted) {
           row.x = fitted.x; row.y = fitted.y;
@@ -303,7 +360,7 @@
       });
       g.on("click tap", (e) => {
         // vid placering: låt klicket nå scenen, den sköter placeringen
-        if (placing || placingRow) return;
+        if (placing || placingRow || isRightClick(e)) return;
         e.cancelBubble = true;
         selectedRowId = row.id; selectedBoxId = null; menu.visible = false;
         renderAll();
@@ -320,10 +377,14 @@
           y: Math.min(e.evt.clientY - rc.top, rc.height - 170),
         };
       });
-      g.on("mouseenter", () => { container.style.cursor = "move"; container.title = title; });
+      g.on("mouseenter mousemove", () => {
+        if (!placing && !placingRow) container.style.cursor = "move";
+        const p = stage.getPointerPosition();
+        if (p) hover = { visible: true, x: p.x, y: p.y, ...title };
+      });
       g.on("mouseleave", () => {
         container.style.cursor = placing || placingRow ? "crosshair" : "grab";
-        container.title = "";
+        hover = { ...hover, visible: false };
       });
       rowLayer.add(g);
     }
@@ -377,7 +438,7 @@
       g.on("dragstart", () => {
         selectedBoxId = b.id; selectedRowId = null; menu.visible = false;
         stage.draggable(false);
-        renderBoxes();
+        renderAll();
       });
       g.on("dragend", () => {
         stage.draggable(true);
@@ -396,10 +457,10 @@
 
       g.on("click tap", (e) => {
         // vid placering: låt klicket nå scenen, den sköter placeringen
-        if (placing || placingRow) return;
+        if (placing || placingRow || isRightClick(e)) return;
         e.cancelBubble = true;
         selectedBoxId = b.id; selectedRowId = null; menu.visible = false;
-        renderBoxes();
+        renderAll();
       });
 
       g.on("contextmenu", (e) => {
@@ -424,7 +485,11 @@
     boxLayer.batchDraw();
   }
 
-  function renderAll() { renderBoxes(); renderRows(); }
+  function renderAll() {
+    renderBoxes();
+    renderRows();
+    onselect(getSelection());
+  }
 
   // --- kontextmenyns åtgärder ---
   function menuBox(): Box | undefined {
@@ -478,24 +543,48 @@
     menu.visible = false;
   }
 
+  // Roterar en box 90° tillsammans med sina plantrader. Returnerar false om det
+  // inte går (boxen hamnar utanför/överlappar, eller någon rad inte längre får plats).
+  function rotateBoxWithRows(b: Box): boolean {
+    const nb = rotatedBox(b);
+    if (!boxValid(nb, b.id)) return false;
+
+    const rows = garden.rows.filter(r => r.boxId === b.id);
+    const moved = rows.map(r => rotatedRow(r, b, nb));
+
+    // varje roterad rad måste rymmas i den nya boxen och inte krocka med de andra
+    const nbRect = { x: nb.x, y: nb.y, w: nb.w, h: nb.h };
+    for (let i = 0; i < moved.length; i++) {
+      const d = plantById[moved[i].plantId].avstand_cm;
+      const ri = rowRect(moved[i], d);
+      if (!rectInside(ri, nbRect)) return false;
+      for (let j = i + 1; j < moved.length; j++) {
+        if (rectsOverlap(ri, rowRect(moved[j], plantById[moved[j].plantId].avstand_cm))) return false;
+      }
+    }
+
+    Object.assign(b, nb);
+    moved.forEach((m, i) => Object.assign(rows[i], m));
+    return true;
+  }
+
   function actRotate() {
     const b = menuBox();
     if (b) {
-      const cand = { ...b, w: b.h, h: b.w };
-      cand.x = Math.min(cand.x, garden.widthCm - cand.w);
-      cand.y = Math.min(cand.y, garden.heightCm - cand.h);
-      if (boxValid(cand, b.id)) { Object.assign(b, cand); commit(); renderAll(); }
+      if (rotateBoxWithRows(b)) { commit(); renderAll(); }
+      else alert("Rutan kan inte roteras här – den (eller dess växter) får inte plats.");
     }
     const row = menuRow();
     if (row) {
       const box = garden.boxes.find(bb => bb.id === row.boxId);
       if (box) {
-        const fitted = fitRow(row.plantId, row.count, (row.rotationDeg + 90) % 180, row.x, row.y, box, row.id);
+        const fitted = fitRow(row.plantId, row.count, (row.rotationDeg + 90) % 180,
+                             row.x, row.y, box, row.id, row.compression);
         if (fitted) {
           row.rotationDeg = fitted.rotationDeg;
           row.x = fitted.x; row.y = fitted.y; row.compression = fitted.compression;
           commit(); renderRows();
-        }
+        } else alert("Raden får inte plats roterad i rutan.");
       }
     }
     menu.visible = false;
@@ -508,7 +597,7 @@
       const n = Math.max(1, Math.round(Number(v) || row.count));
       const box = garden.boxes.find(bb => bb.id === row.boxId);
       if (box) {
-        const fitted = fitRow(row.plantId, n, row.rotationDeg, row.x, row.y, box, row.id);
+        const fitted = fitRow(row.plantId, n, row.rotationDeg, row.x, row.y, box, row.id, row.compression);
         if (fitted) {
           row.count = n; row.x = fitted.x; row.y = fitted.y; row.compression = fitted.compression;
           commit(); renderRows();
@@ -516,6 +605,23 @@
           alert(`${n} st ryms inte här (max 20 % komprimering).`);
         }
       }
+    }
+    menu.visible = false;
+  }
+
+  // Sprider ut radens plantor så de fyller rutans längd (t.ex. 3 pumpor i en hel ruta),
+  // eller återgår till växtens rekommenderade avstånd.
+  function actSpacing(mode: "sprid" | "normal") {
+    const row = menuRow(); if (!row) return;
+    const box = garden.boxes.find(bb => bb.id === row.boxId);
+    if (!box) return;
+    const d = plantById[row.plantId].avstand_cm;
+    const along = row.rotationDeg % 180 !== 0 ? box.h : box.w;
+    const wanted = mode === "sprid" ? along / (row.count * d) : 1;
+    const fitted = fitRow(row.plantId, row.count, row.rotationDeg, row.x, row.y, box, row.id, wanted);
+    if (fitted) {
+      row.x = fitted.x; row.y = fitted.y; row.compression = fitted.compression;
+      commit(); renderRows();
     }
     menu.visible = false;
   }
@@ -596,6 +702,35 @@
     renderAll();
   }
 
+  // --- API för verktygsradens knappar ---
+  export function getSelection(): { kind: "box" | "row"; id: number } | null {
+    if (selectedRowId !== null) return { kind: "row", id: selectedRowId };
+    if (selectedBoxId !== null) return { kind: "box", id: selectedBoxId };
+    return null;
+  }
+
+  export function rotateSelection() {
+    const sel = getSelection();
+    if (!sel) return;
+    menu = { ...menu, kind: sel.kind, id: sel.id };
+    actRotate();
+  }
+
+  export function deleteSelection() {
+    const sel = getSelection();
+    if (!sel) return;
+    if (sel.kind === "box" && garden.locked) return;
+    menu = { ...menu, kind: sel.kind, id: sel.id };
+    actDelete();
+  }
+
+  export function selectRow(id: number) {
+    selectedRowId = id;
+    selectedBoxId = null;
+    menu.visible = false;
+    renderAll();
+  }
+
   onMount(() => {
     nextId = [...garden.boxes, ...garden.rows].reduce((m, o) => Math.max(m, o.id), 0) + 1;
 
@@ -628,6 +763,8 @@
     stage.on("mousemove", moveGhost);
 
     stage.on("click tap", (e) => {
+      // högerklick hanteras av contextmenu — annars stängs menyn direkt efter att den öppnats
+      if ((e.evt as MouseEvent)?.button === 2) return;
       menu.visible = false;
       if (placing) { moveGhost(); tryPlaceBox(); return; }
       if (placingRow) { moveGhost(); tryPlaceRow(); return; }
@@ -675,6 +812,7 @@
       // testkrok för utveckling: placera rad programmatiskt (används ej i produktion)
       (window as any).__oc = {
         garden,
+        menyState: () => menu,
         placeRowAt(plantId: string, count: number, x: number, y: number, rot = 0) {
           const box = odlingBoxAt(x, y);
           const fitted = box ? fitRow(plantId, count, rot, x, y, box) : null;
@@ -711,12 +849,23 @@
     </div>
   {/if}
 
+  {#if hover.visible && !placing && !placingRow}
+    <div class="tooltip" style="left:{hover.x + 14}px; top:{hover.y + 14}px">
+      <b>{hover.namn}</b>
+      <span>{hover.rad1}</span>
+      <span>{hover.rad2}</span>
+      {#if hover.status}<span class="tipstatus">{hover.status}</span>{/if}
+    </div>
+  {/if}
+
   {#if menu.visible}
     <div class="menu" style="left:{menu.x}px; top:{menu.y}px">
       <button on:click={actDuplicate}>⧉ Duplicera</button>
       <button on:click={actRotate}>⟳ Rotera 90°</button>
       {#if menu.kind === "row"}
         <button on:click={actCount}>🔢 Ändra antal…</button>
+        <button on:click={() => actSpacing("sprid")}>↔ Sprid ut i rutan</button>
+        <button on:click={() => actSpacing("normal")}>⇥ Normalt avstånd</button>
       {/if}
       {#if menu.kind === "box" && menuBox()?.typ === "odling"}
         <button on:click={actRename}>✏️ Namnge…</button>
@@ -742,6 +891,16 @@
     border: none; border-radius: 12px; padding: 3px 12px; cursor: pointer;
     background: #fff; color: #2e5d1e; font-weight: 600;
   }
+  .tooltip {
+    position: absolute; z-index: 20; pointer-events: none;
+    background: #fffffff5; border: 1px solid #d8d2c4; border-radius: 6px;
+    padding: 6px 9px; font-size: 0.75rem; line-height: 1.35;
+    box-shadow: 0 2px 10px #0003; display: flex; flex-direction: column;
+    max-width: 220px; color: #3e3a33;
+  }
+  .tooltip b { font-size: 0.82rem; }
+  .tooltip span { color: #6d6757; }
+  .tooltip .tipstatus { color: #a07800; font-weight: 600; }
   .menu {
     position: absolute; z-index: 10; min-width: 160px;
     background: #fff; border: 1px solid #d8d2c4; border-radius: 8px;

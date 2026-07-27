@@ -1,10 +1,16 @@
 <script lang="ts">
   import GardenCanvas from "./lib/GardenCanvas.svelte";
-  import { loadGarden, saveGarden, snap } from "./lib/model";
+  import { loadGarden, saveGarden, snap, plantHeight } from "./lib/model";
   import { PLANTS, plantById, plantsPerM2, type Plant } from "./lib/plants";
+  import { computeWarnings, type Warning } from "./lib/rules";
 
-  const garden = loadGarden();
+  // let (inte const): omtilldelas efter mutationer så Svelte uppdaterar vyn
+  let garden = loadGarden();
   let canvas: GardenCanvas;
+
+  let warnings: Warning[] = computeWarnings(garden);
+  let selection: { kind: "box" | "row"; id: number } | null = null;
+  function refreshWarnings() { warnings = computeWarnings(garden); }
 
   let widthM = garden.widthCm / 100;
   let heightM = garden.heightCm / 100;
@@ -55,6 +61,29 @@
   function onCanvasChange() {
     // avmarkera växtknappen när placeringen avslutas via Esc/Klar
     if (!canvas.isPlacingRow()) selectedPlantId = null;
+    refreshWarnings();
+  }
+
+  function toggleLabels() {
+    garden.showLabels = !garden.showLabels;
+    garden = garden;
+    saveGarden(garden);
+    canvas.redraw();
+  }
+
+  // Höjdjustering (används av skuggberäkningen i M4)
+  function setHeight(plantId: string, värde: number) {
+    const h = Math.max(5, Math.min(400, Math.round(värde)));
+    garden.plantHeights[plantId] = h;
+    garden = garden;
+    saveGarden(garden);
+    canvas.redraw();
+  }
+  function resetHeight(plantId: string) {
+    delete garden.plantHeights[plantId];
+    garden = garden;
+    saveGarden(garden);
+    canvas.redraw();
   }
 
   // infokort
@@ -95,13 +124,25 @@
     <button on:click={() => place("gang")}>▨ Placera gång</button>
   {/if}
   <button class="lock" class:on={locked} on:click={toggleLock}>
-    {locked ? "🔒 Layout låst — klicka för att låsa upp" : "🔓 Lås layout"}
+    {locked ? "🔒 Layout låst" : "🔓 Lås layout"}
   </button>
+
+  <span class="sep"></span>
+
+  <button on:click={() => canvas.rotateSelection()} disabled={!selection}
+          title="Roterar markerad ruta (med sina växter) eller markerad rad">
+    ⟳ Rotera{selection ? selection.kind === "box" ? " rutan" : " raden" : ""}
+  </button>
+  <button on:click={() => canvas.deleteSelection()} disabled={!selection}>🗑 Ta bort</button>
+  <button class:on={garden.showLabels} on:click={toggleLabels}>🏷 Namnskyltar</button>
+
   <span class="hint">
-    {#if locked}
-      Layouten är låst — välj växt och antal till vänster, klicka i en odlingsruta för att plantera.
+    {#if !selection}
+      Klicka på en ruta eller rad för att markera den.
+    {:else if selection.kind === "box"}
+      Odlingsruta markerad — roteras med sina växter.
     {:else}
-      Dra för att flytta · högerklick för meny · Delete tar bort markerad · scrolla = zoom · rutnät 5 cm
+      Plantrad markerad — högerklicka för antal och utglesning.
     {/if}
   </span>
 </div>
@@ -117,25 +158,43 @@
     </div>
     <div class="plantlist">
       {#each filteredPlants as p}
-        <div class="plantrow">
-          <button class="plantbtn" class:active={selectedPlantId === p.id} on:click={() => pickPlant(p.id)}>
-            <span class="swatch" style="background:{p.farg}"></span>
-            <span class="pname">{p.symbol} {p.namn}</span>
-            <small>ø{p.avstand_cm} cm</small>
+        <div class="pcard" class:active={selectedPlantId === p.id}>
+          <button class="pcard-main" on:click={() => pickPlant(p.id)} title="Plantera {p.namn}">
+            <span class="picon" style="background:{p.farg}22; border-color:{p.farg}">{p.symbol}</span>
+            <span class="pinfo">
+              <span class="pnamn">{p.namn}</span>
+              <span class="pmeta">
+                ø{p.avstand_cm} cm · {plantHeight(garden, p.id, p.hojd_cm)} cm hög
+                {#if garden.plantHeights[p.id]}<em>✎</em>{/if}
+              </span>
+            </span>
           </button>
-          <button class="infobtn" on:click={() => infoPlantId = p.id}
-                  title="Mer info om {p.namn}" aria-label="Mer info om {p.namn}">ⓘ</button>
+          <button class="pcard-info" on:click={() => infoPlantId = p.id}
+                  title="Info om {p.namn}" aria-label="Info om {p.namn}">ⓘ</button>
         </div>
       {:else}
         <p class="asidehint">Ingen växt matchar "{plantFilter}".</p>
       {/each}
     </div>
     <p class="asidehint">
-      Välj växt → klicka i en odlingsruta. <b>R</b> roterar innan placering. Är boxen något
-      för kort komprimeras raden automatiskt (max 20 %) och märks med ⚠.
+      Välj växt → klicka i en odlingsruta. <b>R</b> roterar innan placering.
     </p>
   </aside>
-  <GardenCanvas bind:this={canvas} {garden} onchange={onCanvasChange} />
+  <GardenCanvas bind:this={canvas} {garden} onchange={onCanvasChange}
+                onselect={(s) => selection = s} />
+
+  {#if warnings.length}
+    <section class="warnpanel">
+      <h2>Varningar &amp; noteringar</h2>
+      {#each warnings as w}
+        <button class="warn" class:info={w.niva === "info"}
+                on:click={() => w.rowId != null && canvas.selectRow(w.rowId)}>
+          <span class="warnhead">{w.niva === "varning" ? "⚠" : "ℹ"} {w.rubrik}</span>
+          <span class="warntext">{w.text}</span>
+        </button>
+      {/each}
+    </section>
+  {/if}
 </main>
 
 <svelte:window on:keydown={(e) => { if (infoPlantId && e.key === "Escape") infoPlantId = null; }} />
@@ -159,6 +218,24 @@
           <span>{infoPlant.skord_kg_per_m2 != null ? `${infoPlant.skord_kg_per_m2} kg/m²` : "Prydnadsväxt"}</span>
         </div>
         <div class="stat"><span class="statlabel">🕐 Skördetid</span><span>~{infoPlant.dagar_till_skord} dagar</span></div>
+      </div>
+
+      <div class="heightbox">
+        <span class="statlabel">📐 Höjd — påverkar skuggberäkningen</span>
+        <div class="heightrow">
+          <input type="range" min="5" max="250" step="5"
+                 value={plantHeight(garden, infoPlant.id, infoPlant.hojd_cm)}
+                 on:input={(e) => setHeight(infoPlant.id, +e.currentTarget.value)} />
+          <input type="number" min="5" max="400" step="5"
+                 value={plantHeight(garden, infoPlant.id, infoPlant.hojd_cm)}
+                 on:change={(e) => setHeight(infoPlant.id, +e.currentTarget.value)} />
+          <span class="unit">cm</span>
+        </div>
+        {#if garden.plantHeights[infoPlant.id]}
+          <button class="linkbtn" on:click={() => resetHeight(infoPlant.id)}>
+            Återställ till standard ({infoPlant.hojd_cm} cm)
+          </button>
+        {/if}
       </div>
       {#if infoPlant.bra_grannar.length}
         <div class="companions">
@@ -205,8 +282,11 @@
     border: 1px solid #d8d2c4; border-radius: 6px; background: #faf8f3;
     padding: 6px 12px; cursor: pointer; font-size: 0.85rem;
   }
-  .toolbar button:hover { background: #eaf2e3; }
+  .toolbar button:hover:not(:disabled) { background: #eaf2e3; }
+  .toolbar button:disabled { opacity: 0.45; cursor: default; }
   .toolbar button.lock.on { background: #2e5d1e; color: #fff; border-color: #2e5d1e; }
+  .toolbar button.on { background: #2e5d1e; color: #fff; border-color: #2e5d1e; }
+  .sep { width: 1px; height: 22px; background: #e0d9c8; }
   .hint { color: #8a8371; font-size: 0.75rem; }
 
   main { flex: 1; padding: 12px; min-height: 0; display: flex; gap: 12px; }
@@ -227,23 +307,62 @@
     overflow-y: auto; border-top: 1px solid #eee5d3; border-bottom: 1px solid #eee5d3;
     padding: 4px 0; margin-bottom: 8px;
   }
-  .plantrow { display: flex; align-items: stretch; gap: 4px; margin: 2px 0; flex: none; }
-  .plantbtn {
-    display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; text-align: left;
-    padding: 6px 8px; border: 1px solid #d8d2c4; border-radius: 6px;
-    background: #faf8f3; cursor: pointer; font-size: 0.83rem;
+  .pcard {
+    display: flex; align-items: stretch; gap: 0; margin: 3px 0; flex: none;
+    border: 1px solid #d8d2c4; border-radius: 10px; background: #faf8f3; overflow: hidden;
   }
-  .plantbtn:hover { background: #eaf2e3; }
-  .plantbtn.active { outline: 2px solid #4e7a3a; background: #eaf2e3; }
-  .swatch { width: 13px; height: 13px; border-radius: 50%; flex: none; }
-  .pname { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .plantbtn small { color: #8a8371; flex: none; }
-  .infobtn {
-    flex: none; width: 24px; border: 1px solid #d8d2c4; border-radius: 50%;
-    background: #faf8f3; cursor: pointer; font-size: 0.8rem; color: #8a8371; line-height: 1;
+  .pcard:hover { background: #eaf2e3; }
+  .pcard.active { outline: 2px solid #4e7a3a; background: #eaf2e3; }
+  .pcard-main {
+    display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0;
+    text-align: left; padding: 8px 6px 8px 8px; border: none; background: none; cursor: pointer;
   }
-  .infobtn:hover { background: #4e7a3a; color: #fff; border-color: #4e7a3a; }
+  .picon {
+    width: 38px; height: 38px; flex: none; border-radius: 10px; border: 2px solid;
+    display: flex; align-items: center; justify-content: center; font-size: 1.35rem;
+  }
+  .pinfo { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .pnamn { font-size: 0.88rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pmeta { font-size: 0.7rem; color: #8a8371; }
+  .pmeta em { color: #4e7a3a; font-style: normal; }
+  .pcard-info {
+    flex: none; width: 30px; border: none; border-left: 1px solid #e6dfd0;
+    background: none; cursor: pointer; font-size: 0.9rem; color: #a89d87;
+  }
+  .pcard-info:hover { background: #4e7a3a; color: #fff; }
   .asidehint { font-size: 0.72rem; color: #77705f; line-height: 1.4; flex: none; }
+
+  .warnpanel {
+    width: 250px; flex: none; background: #fff; border: 1px solid #d8d2c4;
+    border-radius: 8px; padding: 12px; overflow-y: auto; display: flex;
+    flex-direction: column; gap: 6px;
+  }
+  .warnpanel h2 { font-size: 0.95rem; margin: 0 0 4px; }
+  .warn {
+    text-align: left; border: 1px solid #f0d9a0; background: #fdf7e6;
+    border-radius: 8px; padding: 8px 10px; cursor: pointer;
+    display: flex; flex-direction: column; gap: 4px; font-size: 0.78rem;
+  }
+  .warn:hover { border-color: #e6a700; }
+  .warn.info { border-color: #cfe0c4; background: #f3f8ef; }
+  .warnhead { font-weight: 600; color: #8a6d00; }
+  .warn.info .warnhead { color: #3d6b28; }
+  .warntext { color: #6d6757; line-height: 1.45; }
+
+  .heightbox {
+    border: 1px solid #eee5d3; border-radius: 8px; padding: 8px 10px;
+    background: #faf8f3; margin-bottom: 4px;
+  }
+  .heightrow { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+  .heightrow input[type=range] { flex: 1; min-width: 0; }
+  .heightrow input[type=number] {
+    width: 62px; border: 1px solid #d8d2c4; border-radius: 4px; padding: 4px 6px; font-size: 0.83rem;
+  }
+  .unit { font-size: 0.78rem; color: #8a8371; }
+  .linkbtn {
+    border: none; background: none; color: #4e7a3a; cursor: pointer;
+    font-size: 0.74rem; padding: 4px 0 0; text-decoration: underline;
+  }
 
   .modal-backdrop {
     position: fixed; inset: 0; background: #2e2a2288; z-index: 100;

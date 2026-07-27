@@ -6,6 +6,8 @@ export interface Garden {
   heightCm: number;
   sunDirectionDeg: number; // 0 = norr uppåt
   locked: boolean; // låst layout: boxar kan inte flyttas/ändras, bara planteras i
+  showLabels: boolean; // visa namnskyltar vid varje rad
+  plantHeights: Record<string, number>; // användarens höjdjusteringar per växt (cm)
   boxes: Box[];
   rows: PlantRow[];
 }
@@ -30,19 +32,26 @@ export interface PlantRow {
   x: number; // cm, radens mittpunkt
   y: number;
   rotationDeg: number;
-  compression: number; // 0.8–1.0
+  // Avståndsfaktor mot växtens rekommenderade avstånd.
+  // < 1 = trängre än rekommenderat (varnas), 1 = precis rätt, > 1 = utglesat.
+  compression: number;
 }
 
 export function newGarden(): Garden {
-  return { widthCm: 800, heightCm: 500, sunDirectionDeg: 0, locked: false, boxes: [], rows: [] };
+  return {
+    widthCm: 800, heightCm: 500, sunDirectionDeg: 0, locked: false,
+    showLabels: false, plantHeights: {}, boxes: [], rows: [],
+  };
 }
 
 export function snap(cm: number): number {
   return Math.round(cm / GRID_CM) * GRID_CM;
 }
 
-// Komprimering: hur tätt en plantrad får tryckas ihop (0.8 = 20 % under rek. avstånd)
+// Hur tätt en plantrad får tryckas ihop (0.8 = 20 % under rek. avstånd)
 export const MIN_COMPRESSION = 0.8;
+// Hur glest den får spridas ut (3 = tredubbelt avstånd, för t.ex. färre pumpor i en hel ruta)
+export const MAX_COMPRESSION = 3;
 
 export interface Rect { x: number; y: number; w: number; h: number }
 
@@ -68,6 +77,35 @@ export function rectInside(inner: Rect, outer: Rect): boolean {
 export function overlaps(a: Box, b: Box): boolean {
   // kant-mot-kant räknas INTE som överlapp
   return a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+}
+
+// Boxen roterad 90° medurs kring sin egen mitt.
+export function rotatedBox(b: Box): Box {
+  return {
+    ...b,
+    w: b.h, h: b.w,
+    x: snap(b.x + b.w / 2 - b.h / 2),
+    y: snap(b.y + b.h / 2 - b.w / 2),
+  };
+}
+
+// En rads nya läge när dess box roteras 90° medurs. Räknas i boxens lokala
+// koordinater, så resultatet är exakt oavsett var boxens mitt hamnar i rutnätet:
+// en punkt (lx, ly) i den gamla boxen hamnar på (gammal höjd − ly, lx) i den nya.
+export function rotatedRow(r: PlantRow, oldBox: Box, newBox: Box): PlantRow {
+  const lx = r.x - oldBox.x;
+  const ly = r.y - oldBox.y;
+  return {
+    ...r,
+    x: snap(newBox.x + (oldBox.h - ly)),
+    y: snap(newBox.y + lx),
+    rotationDeg: (r.rotationDeg + 90) % 180,
+  };
+}
+
+// Växtens höjd med användarens ev. justering (för skuggberäkning i M4).
+export function plantHeight(garden: Garden, plantId: string, standardHojd: number): number {
+  return garden.plantHeights?.[plantId] ?? standardHojd;
 }
 
 const KEY = "odlingsplaneraren";
