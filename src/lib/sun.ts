@@ -152,6 +152,55 @@ export function skuggAzimut(solAzimutGrader: number): number {
   return (solAzimutGrader + 180) % 360;
 }
 
+/**
+ * Ligger punkten i skuggan? Skuggan är källrektangeln svept längs (dx, dy), alltså
+ * mängden av alla punkter p där p − t·(dx,dy) ligger i rektangeln för något t i [0,1].
+ * Testas exakt genom att lösa ut vilka t som fungerar i x- respektive y-led.
+ */
+export function punktISkugga(
+  px: number, py: number,
+  r: { x: number; y: number; w: number; h: number },
+  dx: number, dy: number,
+): boolean {
+  let tMin = 0, tMax = 1;
+
+  const spann = (p: number, lo: number, hi: number, d: number): boolean => {
+    if (Math.abs(d) < 1e-9) return p >= lo && p <= hi; // ingen rörelse i det ledet
+    const a = (p - hi) / d, b = (p - lo) / d;
+    tMin = Math.max(tMin, Math.min(a, b));
+    tMax = Math.min(tMax, Math.max(a, b));
+    return tMin <= tMax;
+  };
+
+  if (!spann(px, r.x, r.x + r.w, dx)) return false;
+  if (!spann(py, r.y, r.y + r.h, dy)) return false;
+  return tMin <= tMax;
+}
+
+/**
+ * Hur stor andel (0–1) av `traffad` som ligger i skuggan från `kallare`.
+ * Uppskattas genom att pricka av ett rutnät av punkter över den träffade raden.
+ */
+export function skuggTackning(
+  traffad: { x: number; y: number; w: number; h: number },
+  kallare: { x: number; y: number; w: number; h: number },
+  dx: number, dy: number,
+): number {
+  const NX = 12, NY = 6;
+  let traffar = 0;
+  for (let ix = 0; ix < NX; ix++) {
+    for (let iy = 0; iy < NY; iy++) {
+      const px = traffad.x + ((ix + 0.5) / NX) * traffad.w;
+      const py = traffad.y + ((iy + 0.5) / NY) * traffad.h;
+      if (punktISkugga(px, py, kallare, dx, dy)) traffar++;
+    }
+  }
+  return traffar / (NX * NY);
+}
+
+// Under den här andelen är skuggan för liten för att vara värd en varning.
+export const SKUGG_GRANS = 0.25;
+
 // Förskjutning i planens koordinater (x åt öster, y nedåt = söderut när norr är uppåt).
 // `planetsNordDeg` roterar hela planen: 0 = norr rakt upp i bilden.
 export function skuggOffset(langdCm: number, skuggAzimutGrader: number,

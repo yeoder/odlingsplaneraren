@@ -33,6 +33,7 @@
     saveGarden(garden);
     canvas?.redraw();
     sol = canvas?.aktuellSol().sol ?? null;
+    refreshWarnings(); // skuggvarningarna beror på tid, plats och väderstreck
   }
   function toggleSkugga() {
     garden.visaSkugga = !garden.visaSkugga;
@@ -40,6 +41,29 @@
   }
 
   onMount(() => { sol = canvas?.aktuellSol().sol ?? null; });
+
+  // --- startsida ---
+  let panelHopfalld = false;
+  let panLage = false;
+  let visaInstallningar = false;
+
+  function startaOdlingen() {
+    garden.uppsatt = true;
+    applySize();
+    saveGarden(garden);
+    visaInstallningar = false;
+    schema = computeSchedule(garden);
+  }
+  // Kompassen på startsidan använder samma vinkel som planen och skuggorna.
+  let kompassSetupEl: HTMLDivElement;
+  function vridSetupKompass(e: PointerEvent) {
+    if (e.buttons !== 1 && e.type !== "pointerdown") return;
+    const r = kompassSetupEl.getBoundingClientRect();
+    const mx = r.left + r.width / 2, my = r.top + r.height / 2;
+    const v = (Math.atan2(e.clientX - mx, my - e.clientY) * 180) / Math.PI;
+    garden.sunDirectionDeg = Math.round(((v % 360) + 360) % 360);
+    garden = garden;
+  }
 
   // minimerade varningar (id → hopfälld)
   let collapsed: Record<string, boolean> = {};
@@ -144,16 +168,74 @@
   }
 </script>
 
+{#if !garden.uppsatt || visaInstallningar}
+  <div class="setup">
+    <div class="setupkort">
+      <h1>🌱 Odlingsplaneraren</h1>
+      <p class="ingress">
+        Rita upp din odling i verkliga mått, placera växter med rätt avstånd och få
+        varningar om trängsel och skugga – plus ett årsschema för sådd och utplantering.
+      </p>
+
+      <div class="falt">
+        <label>Hur stor är odlingen?
+          <span class="matt">
+            <input type="number" bind:value={widthM} min="1" max="100" step="0.5" /> ×
+            <input type="number" bind:value={heightM} min="1" max="100" step="0.5" /> m
+          </span>
+        </label>
+
+        <label>Närmaste ort
+          <select bind:value={garden.platsNamn}>
+            {#each PLATSER as p}<option value={p.namn}>{p.namn}</option>{/each}
+          </select>
+          <small>Ger latitud för solens höjd och skuggornas längd.</small>
+        </label>
+
+        <label>Sista vårfrost
+          <input type="date" bind:value={garden.sistaFrostDatum} />
+          <small>Hela årsschemat räknas från det här datumet.</small>
+        </label>
+      </div>
+
+      <div class="kompassfalt">
+        <div class="kompass-setup" bind:this={kompassSetupEl}
+             on:pointerdown={vridSetupKompass} on:pointermove={vridSetupKompass}>
+          <div class="ros-setup" style="transform: rotate({-garden.sunDirectionDeg}deg)">
+            <span class="v n">N</span><span class="v o">Ö</span>
+            <span class="v s">S</span><span class="v va">V</span>
+            <span class="nal"></span>
+          </div>
+        </div>
+        <div>
+          <strong>Vrid kompassen så norr stämmer</strong>
+          <p>
+            Dra i kompassen tills norr pekar åt samma håll som i verkligheten, sett
+            uppifrån din odling. Det är det enda solen behöver veta – skuggorna räknas
+            sedan ut åt rätt håll automatiskt.
+          </p>
+          <span class="riktning">Norr ligger {garden.sunDirectionDeg}° medurs från uppåt</span>
+        </div>
+      </div>
+
+      <button class="starta" on:click={startaOdlingen}>
+        {garden.uppsatt ? "Spara och tillbaka till odlingen" : "Starta odlingen →"}
+      </button>
+      {#if visaInstallningar}
+        <button class="linkbtn mitten-lank" on:click={() => visaInstallningar = false}>Avbryt</button>
+      {/if}
+    </div>
+  </div>
+{:else}
 <header>
   <h1>🌱 Odlingsplaneraren</h1>
   <div class="controls">
-    <label>Odlingens storlek:
-      <input type="number" bind:value={widthM} min="1" max="100" step="0.5" on:change={applySize} /> ×
-      <input type="number" bind:value={heightM} min="1" max="100" step="0.5" on:change={applySize} /> m
-    </label>
-    <label title="Utgångspunkt för hela årsschemat">Sista vårfrost:
-      <input type="date" class="date" bind:value={garden.sistaFrostDatum} on:change={frostChanged} />
-    </label>
+    <!-- Grunduppgifterna är låsta efter uppstart: ändras de mitt i planeringen
+         skalas hela vyn om och man tappar bort sig. -->
+    <span class="fast">{garden.widthCm / 100} × {garden.heightCm / 100} m</span>
+    <span class="fast">📍 {garden.platsNamn}</span>
+    <span class="fast">❄ {garden.sistaFrostDatum}</span>
+    <button class="installningar" on:click={() => visaInstallningar = true}>⚙ Ändra</button>
   </div>
 </header>
 
@@ -179,6 +261,10 @@
   <button on:click={() => canvas.deleteSelection()} disabled={!selection}>🗑 Ta bort</button>
   <button class:on={garden.showLabels} on:click={toggleLabels}>🏷 Namnskyltar</button>
   <button class:on={garden.visaSkugga} on:click={toggleSkugga}>☀️ Skuggor</button>
+  <button class:on={panLage} on:click={() => panLage = !panLage}
+          title="I panoreringsläge kan du dra runt och zooma utan att råka flytta växter eller rutor">
+    {panLage ? "🖐 Panorerar" : "🖐 Panorera"}
+  </button>
 
   <span class="hint">
     {#if !selection}
@@ -268,18 +354,30 @@
         {/if}
       </div>
     {/if}
-    <GardenCanvas bind:this={canvas} {garden} onchange={onCanvasChange}
+    <GardenCanvas bind:this={canvas} {garden} {panLage} onchange={onCanvasChange}
                   onselect={(s) => selection = s} />
   </div>
 
-  {#if warnings.length}
-    <section class="warnpanel">
+  <!-- Panelen ligger alltid kvar: dyker den upp och försvinner ändras ritytans
+       bredd, och vyn skalas om mitt i att man vrider kompassen. -->
+  <section class="warnpanel" class:hopfalld={panelHopfalld}>
+    {#if panelHopfalld}
+      <button class="panelflik" on:click={() => panelHopfalld = false}
+              title="Visa varningar och noteringar">
+        ◀ <span class="flikcount" class:tom={warnings.length === 0}>{warnings.length}</span>
+      </button>
+    {:else}
       <div class="warnhead-row">
         <h2>Varningar &amp; noteringar <span class="count">{warnings.length}</span></h2>
+        <button class="panelmin" on:click={() => panelHopfalld = true} title="Minimera panelen">▶</button>
+      </div>
+      {#if warnings.length === 0}
+        <p class="asidehint">Inga varningar – allt ser bra ut.</p>
+      {:else}
         <button class="linkbtn" on:click={toggleAllWarnings}>
           {allCollapsed ? "Visa alla" : "Minimera alla"}
         </button>
-      </div>
+      {/if}
       {#each warnings as w}
         <div class="warn" class:info={w.niva === "info"} class:collapsed={collapsed[w.id]}>
           <div class="warnrow">
@@ -297,8 +395,8 @@
           {/if}
         </div>
       {/each}
-    </section>
-  {/if}
+    {/if}
+  </section>
 </main>
 
 <section class="schema">
@@ -346,6 +444,7 @@
     </div>
   {/if}
 </section>
+{/if}
 
 <svelte:window on:keydown={(e) => { if (infoPlantId && e.key === "Escape") infoPlantId = null; }} />
 
@@ -516,6 +615,82 @@
     border-radius: 8px; padding: 12px; overflow-y: auto; display: flex;
     flex-direction: column; gap: 6px;
   }
+  .warnpanel.hopfalld { width: 34px; padding: 6px 2px; align-items: center; overflow: hidden; }
+  .panelflik {
+    border: none; background: none; cursor: pointer; color: #6d6757;
+    display: flex; flex-direction: column; align-items: center; gap: 6px;
+    font-size: 0.8rem; padding: 4px 0; width: 100%;
+  }
+  .flikcount {
+    background: #e6a700; color: #fff; border-radius: 10px;
+    padding: 1px 6px; font-size: 0.7rem; font-weight: 700;
+  }
+  .flikcount.tom { background: #d8d2c4; color: #6d6757; }
+  .panelmin {
+    border: none; background: none; cursor: pointer; color: #a89d87;
+    font-size: 0.75rem; padding: 2px 4px;
+  }
+  .panelmin:hover { color: #4e7a3a; }
+
+  /* ---- startsida ---- */
+  .setup {
+    flex: 1; display: flex; align-items: center; justify-content: center;
+    padding: 24px; overflow-y: auto;
+  }
+  .setupkort {
+    background: #fff; border: 1px solid #d8d2c4; border-radius: 14px;
+    padding: 28px; max-width: 560px; width: 100%; box-shadow: 0 4px 24px #0001;
+  }
+  .setupkort h1 { font-size: 1.5rem; margin: 0 0 6px; }
+  .ingress { font-size: 0.88rem; color: #6d6757; line-height: 1.55; margin: 0 0 20px; }
+  .falt { display: flex; flex-direction: column; gap: 14px; }
+  .falt label { display: flex; flex-direction: column; gap: 5px; font-size: 0.85rem; font-weight: 600; }
+  .falt small { font-weight: 400; color: #8a8371; font-size: 0.74rem; }
+  .falt input, .falt select {
+    border: 1px solid #d8d2c4; border-radius: 6px; padding: 7px 9px; font-size: 0.9rem;
+  }
+  .matt { display: flex; align-items: center; gap: 8px; }
+  .matt input { width: 90px; }
+  .kompassfalt {
+    display: flex; gap: 16px; align-items: flex-start;
+    margin: 20px 0; padding: 14px; background: #faf8f3;
+    border: 1px solid #eee5d3; border-radius: 10px;
+  }
+  .kompassfalt strong { font-size: 0.85rem; }
+  .kompassfalt p { font-size: 0.78rem; color: #6d6757; line-height: 1.5; margin: 4px 0 6px; }
+  .riktning { font-size: 0.74rem; color: #8a8371; }
+  .kompass-setup {
+    position: relative; flex: none; width: 96px; height: 96px; border-radius: 50%;
+    background: #fff; border: 1px solid #d8d2c4; cursor: grab; touch-action: none;
+  }
+  .kompass-setup:active { cursor: grabbing; }
+  .ros-setup { position: absolute; inset: 0; }
+  .ros-setup .v {
+    position: absolute; left: 50%; top: 50%; font-size: 0.72rem; font-weight: 700; color: #8a8371;
+  }
+  .ros-setup .n  { transform: translate(-50%, -50%) translateY(-36px); color: #b3402a; }
+  .ros-setup .s  { transform: translate(-50%, -50%) translateY(36px); }
+  .ros-setup .o  { transform: translate(-50%, -50%) translateX(36px); }
+  .ros-setup .va { transform: translate(-50%, -50%) translateX(-36px); }
+  .ros-setup .nal {
+    position: absolute; left: 50%; top: 16px; width: 3px; height: 32px;
+    background: linear-gradient(#b3402a 0 60%, #c9c1ae 60% 100%);
+    transform: translateX(-50%); border-radius: 2px;
+  }
+  .starta {
+    width: 100%; border: none; border-radius: 8px; background: #4e7a3a; color: #fff;
+    padding: 12px; font-size: 0.95rem; font-weight: 600; cursor: pointer;
+  }
+  .starta:hover { background: #3f6430; }
+  .mitten-lank { display: block; margin: 8px auto 0; }
+  .fast {
+    background: #ffffff26; border-radius: 5px; padding: 3px 8px; font-size: 0.82rem;
+  }
+  .installningar {
+    border: 1px solid #ffffff55; border-radius: 6px; background: #ffffff1a;
+    color: #fff; padding: 4px 10px; cursor: pointer; font-size: 0.8rem;
+  }
+  .installningar:hover { background: #ffffff33; }
   .warnpanel h2 { font-size: 0.95rem; margin: 0; }
   .warnhead-row {
     display: flex; align-items: baseline; justify-content: space-between;

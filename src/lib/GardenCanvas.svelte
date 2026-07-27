@@ -11,6 +11,7 @@
   import {
     solPosition, skuggLangdCm, skuggAzimut, skuggOffset, platsByNamn, SASONGER, MIN_SOLHOJD,
   } from "./sun";
+  import { staarIJord, hojdVidDatum, sasongensDatum } from "./schedule";
 
   export let garden: Garden;
   export let onchange: () => void = () => {};
@@ -92,6 +93,10 @@
   }
   function dialogCancel() { dialog = { ...dialog, visible: false }; }
 
+  // Panoreringsläge: rutor och rader går inte att dra, bara vyn flyttas. Utan det
+  // är det lätt att råka rycka med sig en planta när man vill förflytta sig i planen.
+  export let panLage = false;
+
   // Under placering stängs panorering av: annars blir minsta musrörelse med knappen nere
   // ett scendrag istället för ett klick, och ingenting placeras.
   function syncInteractionMode() {
@@ -100,6 +105,8 @@
     stage.draggable(!isPlacing);
     renderAll();
   }
+
+  $: if (stage) { panLage; syncInteractionMode(); }
 
   export function startPlacing(typ: "odling" | "gang", wCm: number, hCm: number) {
     cancelPlacing();
@@ -390,7 +397,7 @@
       const plant = plantById[row.plantId];
       const r = rowRect(row, plant);
       const g = new Konva.Group({
-        x: r.x, y: r.y, draggable: placing === null && placingRow === null,
+        x: r.x, y: r.y, draggable: placing === null && placingRow === null && !panLage,
       });
       drawRowShape(g, row);
       if (garden.showLabels) drawRowLabel(g, row);
@@ -481,7 +488,7 @@
     for (const b of garden.boxes) {
       const isPlacing = placing !== null || placingRow !== null;
       const g = new Konva.Group({
-        x: b.x, y: b.y, draggable: !garden.locked && !isPlacing, id: String(b.id),
+        x: b.x, y: b.y, draggable: !garden.locked && !isPlacing && !panLage, id: String(b.id),
       });
 
       const isGang = b.typ === "gang";
@@ -573,9 +580,10 @@
   export function aktuellSol() {
     const plats = platsByNamn(garden.platsNamn);
     const sasong = SASONGER.find(s => s.id === garden.solSasong) ?? SASONGER[1];
-    const ar = new Date(garden.sistaFrostDatum || "2026-05-15").getFullYear();
-    const sol = solPosition(plats, ar, sasong.manad, sasong.dag, garden.solTimme);
-    return { plats, sasong, sol };
+    const frost = garden.sistaFrostDatum || "2026-05-15";
+    const datum = sasongensDatum(frost, sasong.manad, sasong.dag);
+    const sol = solPosition(plats, datum.getFullYear(), sasong.manad, sasong.dag, garden.solTimme);
+    return { plats, sasong, sol, datum, frost };
   }
 
   function konvexHolje(punkter: { x: number; y: number }[]): number[] {
@@ -599,14 +607,16 @@
     shadowLayer.destroyChildren();
     if (!garden.visaSkugga) { shadowLayer.batchDraw(); return; }
 
-    const { sol } = aktuellSol();
+    const { sol, datum, frost } = aktuellSol();
     if (!sol.uppe || sol.hojdGrader <= MIN_SOLHOJD) { shadowLayer.batchDraw(); return; }
 
     const az = skuggAzimut(sol.azimutGrader);
     for (const row of garden.rows) {
       const plant = plantById[row.plantId];
-      if (!plant) continue;
-      const hojd = plantHeight(garden, plant.id, plant.hojd_cm);
+      // Växten kastar bara skugga när den faktiskt står i jorden vid det valda
+      // datumet, och med den höjd den hunnit få då — inte sin fullvuxna höjd.
+      if (!plant || !staarIJord(plant, frost, datum)) continue;
+      const hojd = hojdVidDatum(plant, plantHeight(garden, plant.id, plant.hojd_cm), frost, datum);
       const langd = skuggLangdCm(hojd, sol.hojdGrader);
       if (langd < 5) continue;
       const { dx, dy } = skuggOffset(langd, az, garden.sunDirectionDeg);
@@ -1036,7 +1046,8 @@
       <span class="nal"></span>
     </div>
     {#if solAzimut?.uppe && solAzimut.hojdGrader > MIN_SOLHOJD}
-      <span class="sol" style="transform: rotate({solAzimut.azimutGrader - garden.sunDirectionDeg}deg)">☀️</span>
+      <!-- solen ritas av ::before, som bär förskjutningen ut mot kanten -->
+      <span class="sol" style="transform: rotate({solAzimut.azimutGrader - garden.sunDirectionDeg}deg)"></span>
     {/if}
   </div>
 

@@ -54,6 +54,62 @@ export function formateraDatum(d: Date): string {
   return d.toLocaleDateString("sv-SE", { day: "numeric", month: "short" });
 }
 
+// ---------- odlingsperiod och höjd över tid ----------
+// Behövs för skuggberäkningen: en solros är inte 200 cm i april, och en rädisa
+// är skördad långt innan solrosen hunnit bli hög.
+
+/** Datum då växten står i jorden på plats (utplanterad eller direktsådd). */
+export function iJordDatum(p: Plant, frostISO: string): Date {
+  if (p.forsa_veckor_fore_frost != null) {
+    return addWeeks(frostISO, p.plantera_ut_veckor_efter_frost ?? 0);
+  }
+  return addWeeks(frostISO, -(p.direktsadd_veckor_fore_frost ?? 0));
+}
+
+/** Ungefärligt datum då grödan är färdig — slutet på den huvudsakliga odlingsperioden. */
+export function fardigDatum(p: Plant, frostISO: string): Date {
+  const d = iJordDatum(p, frostISO);
+  d.setDate(d.getDate() + p.dagar_till_skord);
+  return d;
+}
+
+// En gröda rensas sällan bort samma dag den blir färdig — den står kvar ett tag till.
+// Andelen är proportionell mot odlingstiden: en rädisa dras upp snabbt, medan en
+// solros eller tomat får stå kvar i veckor efter att den börjat ge skörd.
+const EFTERPERIOD_ANDEL = 0.3;
+
+/** Datum då grödan antas vara borttagen ur odlingen. */
+export function urJordDatum(p: Plant, frostISO: string): Date {
+  const d = fardigDatum(p, frostISO);
+  d.setDate(d.getDate() + Math.round(p.dagar_till_skord * EFTERPERIOD_ANDEL));
+  return d;
+}
+
+export function staarIJord(p: Plant, frostISO: string, datum: Date): boolean {
+  return datum >= iJordDatum(p, frostISO) && datum <= urJordDatum(p, frostISO);
+}
+
+/**
+ * Uppskattad höjd vid ett givet datum: noll innan plantering, full höjd när grödan
+ * är färdig, linjärt däremellan.
+ * FÖRENKLING: verklig tillväxt är S-formad (långsam start, snabb mitt), men linjärt
+ * räcker gott för att avgöra om en växt hunnit bli hög nog att skugga en annan.
+ */
+export function hojdVidDatum(p: Plant, slutHojdCm: number, frostISO: string, datum: Date): number {
+  const start = iJordDatum(p, frostISO).getTime();
+  const slut = fardigDatum(p, frostISO).getTime();
+  const t = datum.getTime();
+  if (t < start) return 0;
+  if (t >= slut || slut <= start) return slutHojdCm;
+  return slutHojdCm * ((t - start) / (slut - start));
+}
+
+/** Datumet som en vald säsong motsvarar, med år hämtat ur frostdatumet. */
+export function sasongensDatum(frostISO: string, manad: number, dag: number): Date {
+  const ar = new Date((frostISO || "2026-05-15") + "T12:00:00").getFullYear();
+  return new Date(ar, manad - 1, dag, 12, 0, 0);
+}
+
 export function computeSchedule(garden: Garden): Vecka[] {
   const frost = garden.sistaFrostDatum;
   if (!frost) return [];
