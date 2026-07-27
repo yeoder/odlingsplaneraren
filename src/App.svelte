@@ -6,6 +6,7 @@
   import { computeWarnings, type Warning } from "./lib/rules";
   import { computeSchedule, formateraDatum, ATGARD_RUBRIK, type Vecka, type Atgard } from "./lib/schedule";
   import { PLATSER, SASONGER, TIDER, MIN_SOLHOJD } from "./lib/sun";
+  import { skuggAnalys, type SkuggPost } from "./lib/shade";
 
   // let (inte const): omtilldelas efter mutationer så Svelte uppdaterar vyn
   let garden = loadGarden();
@@ -41,6 +42,11 @@
   }
 
   onMount(() => { sol = canvas?.aktuellSol().sol ?? null; });
+
+  // --- skuggöversyn ---
+  let visaSkuggoversyn = false;
+  let skuggposter: SkuggPost[] = [];
+  $: if (visaSkuggoversyn) skuggposter = skuggAnalys(garden);
 
   // --- startsida ---
   let panelHopfalld = false;
@@ -313,9 +319,8 @@
   <div class="mitten">
     {#if garden.visaSkugga}
       <div class="solrad">
-        <label>📍 <select bind:value={garden.platsNamn} on:change={solChanged}>
-          {#each PLATSER as p}<option value={p.namn}>{p.namn}</option>{/each}
-        </select></label>
+        <!-- Orten sätts vid uppstart och ändras via inställningarna. -->
+        <button class="oversyn" on:click={() => visaSkuggoversyn = true}>🔎 Skuggöversyn</button>
 
         <span class="grupp">
           {#each SASONGER as s}
@@ -446,7 +451,68 @@
 </section>
 {/if}
 
-<svelte:window on:keydown={(e) => { if (infoPlantId && e.key === "Escape") infoPlantId = null; }} />
+{#if visaSkuggoversyn}
+  <div class="modal-backdrop" on:click={() => visaSkuggoversyn = false}>
+    <div class="modal-card bred" on:click|stopPropagation>
+      <button class="modal-close" on:click={() => visaSkuggoversyn = false} aria-label="Stäng">✕</button>
+      <h3>🔎 Skuggöversyn</h3>
+      <p class="modal-desc">
+        Varje rad har följts timme för timme genom dygnet, vid alla fyra säsonger.
+        Timmarna vägs med solens styrka – en skugga mitt på dagen kostar mycket ljus,
+        samma skugga sent på kvällen nästan inget. Här visas den säsong då raden
+        har det sämst.
+      </p>
+
+      {#if skuggposter.length === 0}
+        <p class="asidehint">Inga plantrader att analysera ännu.</p>
+      {:else}
+        <div class="oversyn-scroll">
+          <table class="oversyntabell">
+            <thead>
+              <tr>
+                <th>Rad</th><th>Vill ha</th><th>Sol/dag</th>
+                <th>Ljus som skuggas bort</th><th>Sämst vid</th><th>Skuggas mest av</th>
+              </tr>
+            </thead>
+            <tbody>
+              {#each skuggposter as p}
+                <tr class:brist={!p.farSolNog}>
+                  <td><strong>{p.antal} × {p.namn}</strong></td>
+                  <td>{p.solbehov} ({p.kravTimmar} h)</td>
+                  <td>
+                    <span class="timmar" class:ok={p.farSolNog}>{p.soltimmar} h</span>
+                  </td>
+                  <td>
+                    <span class="stapel"><span class="fyllnad" style="width:{Math.round(p.ljusforlust * 100)}%"></span></span>
+                    {Math.round(p.ljusforlust * 100)} %
+                  </td>
+                  <td>{p.sasongNamn}</td>
+                  <td>
+                    {#if p.kallor.length}
+                      {p.kallor.slice(0, 2).map(k => `${k.namn} (${Math.round(k.andel * 100)} %)`).join(", ")}
+                    {:else}
+                      <span class="tomcell">–</span>
+                    {/if}
+                  </td>
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+        </div>
+        <p class="asidehint fotnot">
+          Bara växternas egna skuggor räknas. Hus, staket, häckar och träd utanför
+          odlingen påverkar minst lika mycket men finns inte i modellen.
+        </p>
+      {/if}
+    </div>
+  </div>
+{/if}
+
+<svelte:window on:keydown={(e) => {
+  if (e.key !== "Escape") return;
+  if (infoPlantId) infoPlantId = null;
+  else if (visaSkuggoversyn) visaSkuggoversyn = false;
+}} />
 
 {#if infoPlant}
   <div class="modal-backdrop" on:click={() => infoPlantId = null}>
@@ -568,6 +634,30 @@
   .skjut input { width: 110px; }
   .klocka { font-variant-numeric: tabular-nums; color: #6d6757; }
   .solinfo { color: #8a6d00; margin-left: auto; }
+  .oversyn {
+    border: 1px solid #d8d2c4; border-radius: 6px; background: #faf8f3;
+    padding: 4px 12px; cursor: pointer; font-size: 0.78rem; font-weight: 600;
+  }
+  .oversyn:hover { background: #eaf2e3; }
+
+  .modal-card.bred { width: 720px; max-width: 100%; }
+  .oversyn-scroll { overflow-x: auto; }
+  .oversyntabell { border-collapse: collapse; width: 100%; font-size: 0.78rem; }
+  .oversyntabell th, .oversyntabell td {
+    border-bottom: 1px solid #eee5d3; padding: 6px 8px; text-align: left; white-space: nowrap;
+  }
+  .oversyntabell th {
+    font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.03em; color: #8a8371;
+  }
+  .oversyntabell tr.brist { background: #fdf7e6; }
+  .timmar { font-weight: 700; color: #b3402a; }
+  .timmar.ok { color: #3d6b28; }
+  .stapel {
+    display: inline-block; width: 60px; height: 7px; border-radius: 4px;
+    background: #eee5d3; vertical-align: middle; margin-right: 6px; overflow: hidden;
+  }
+  .fyllnad { display: block; height: 100%; background: #e6a700; }
+  .fotnot { margin-top: 10px; }
   aside {
     width: 220px; flex: none; background: #fff; border: 1px solid #d8d2c4;
     border-radius: 8px; padding: 12px; display: flex; flex-direction: column; min-height: 0;

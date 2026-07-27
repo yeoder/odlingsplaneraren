@@ -4,11 +4,7 @@ import {
   MIN_COMPRESSION, rowComp, rowRect, rectInside, plantHeight, type Garden,
 } from "./model";
 import { plantById } from "./plants";
-import {
-  solPosition, skuggLangdCm, skuggAzimut, skuggOffset, platsByNamn, SASONGER, TIDER,
-  MIN_SOLHOJD, skuggTackning, SKUGG_GRANS,
-} from "./sun";
-import { staarIJord, hojdVidDatum, sasongensDatum } from "./schedule";
+import { skuggAnalys, LJUSFORLUST_NOTERING, LJUSFORLUST_VARNING } from "./shade";
 
 export interface Warning {
   id: string;
@@ -97,91 +93,31 @@ export function computeWarnings(garden: Garden): Warning[] {
   return out;
 }
 
-// Skuggvarningar: en hög rad som skuggar en lägre solälskande rad.
-//
-// Hela säsongen genomsöks — alla förinställda säsonger och tider — och för varje par
-// rapporteras det värsta läget. Annars skulle en varning bara dyka upp om användaren
-// råkade vrida fram just den tidpunkt då problemet uppstår, och skuggproblem skulle
-// bli något man hittar av en slump i stället för något appen berättar.
-//
-// Tidpunkten spelar roll i två led. Dels är växterna olika höga vid olika datum —
-// en solros är inte 200 cm i maj. Dels står de inte i jorden samtidigt: rädisor är
-// skördade långt innan solrosen hunnit bli hög, och ska då inte varnas för.
+// Skuggvarningar bygger på hela dygnets ljus, inte på det värsta ögonblicket.
+// Se shade.ts för resonemanget: nästan varje rad skuggas till 90 % någon gång på
+// morgonen eller kvällen, så toppvärden ger bara brus. Varning ges först när
+// växten faktiskt får för få soltimmar för sitt läge.
 //
 // FÖRENKLING: bara växternas egna skuggor räknas — hus, staket, häckar och träd
 // utanför odlingen påverkar minst lika mycket men finns inte i modellen.
 function skuggVarningar(garden: Garden): Warning[] {
-  const plats = platsByNamn(garden.platsNamn);
-  const frost = garden.sistaFrostDatum || "2026-05-15";
-
-  // par-nyckel -> värsta observerade läget
-  interface Varst {
-    andel: number; tid: string; hojdK: number; langd: number;
-    pk: string; pt: string; solbehov: string; traffadId: number;
-  }
-  const varst = new Map<string, Varst>();
-
-  for (const sasong of SASONGER) {
-    const datum = sasongensDatum(frost, sasong.manad, sasong.dag);
-    for (const t of TIDER) {
-      const sol = solPosition(plats, datum.getFullYear(), sasong.manad, sasong.dag, t.timme);
-      if (!sol.uppe || sol.hojdGrader <= MIN_SOLHOJD) continue;
-      const az = skuggAzimut(sol.azimutGrader);
-      const tid = `${sasong.namn.toLowerCase()} kl ${String(t.timme).padStart(2, "0")}`;
-
-      for (const kastare of garden.rows) {
-        const pk = plantById[kastare.plantId];
-        if (!pk || !staarIJord(pk, frost, datum)) continue;
-
-        const hojdK = hojdVidDatum(pk, plantHeight(garden, pk.id, pk.hojd_cm), frost, datum);
-        const langd = skuggLangdCm(hojdK, sol.hojdGrader);
-        if (langd < 10) continue;
-
-        const rk = rowRect(kastare, pk);
-        const { dx, dy } = skuggOffset(langd, az, garden.sunDirectionDeg);
-
-        for (const traffad of garden.rows) {
-          if (traffad.id === kastare.id) continue;
-          const pt = plantById[traffad.plantId];
-          if (!pt || !staarIJord(pt, frost, datum)) continue;
-
-          const hojdT = hojdVidDatum(pt, plantHeight(garden, pt.id, pt.hojd_cm), frost, datum);
-          if (hojdT >= hojdK * 0.8) continue; // ungefär lika höga — skuggar inte nämnvärt
-
-          const andel = skuggTackning(rowRect(traffad, pt), rk, dx, dy);
-          if (andel < SKUGG_GRANS) continue; // nuddar bara — inte värt en varning
-
-          const nyckel = `${kastare.id}-${traffad.id}`;
-          const fore = varst.get(nyckel);
-          if (!fore || andel > fore.andel) {
-            varst.set(nyckel, {
-              andel, tid, hojdK, langd,
-              pk: pk.namn, pt: pt.namn, solbehov: pt.solbehov, traffadId: traffad.id,
-            });
-          }
-        }
-      }
-    }
-  }
-
-  return [...varst.entries()].map(([nyckel, v]) => {
-    const procent = Math.round(v.andel * 100);
-    const solalskare = v.solbehov === "sol";
-    return {
-      id: `skugga-${nyckel}`,
-      niva: solalskare ? "varning" : "info",
-      rubrik: solalskare
-        ? `${v.pt} skuggas upp till ${procent} % av ${v.pk}`
-        : `${v.pt} står delvis i skugga av ${v.pk}`,
-      text: solalskare
-        ? `Som värst vid ${v.tid}: ${v.pk} är då ungefär ${Math.round(v.hojdK)} cm hög och ` +
-          `kastar ${Math.round(v.langd)} cm skugga, som täcker ${procent} % av raden med ` +
-          `${v.pt}. ${v.pt} vill ha full sol – flytta den till solsidan eller byt plats på raderna.`
-        : `${v.pk} skuggar som mest ${procent} % av ${v.pt} (vid ${v.tid}) – men ${v.pt} ` +
-          `trivs i ${v.solbehov}, så det är snarare en fördel.`,
-      rowId: v.traffadId,
-    } satisfies Warning;
-  });
+  return skuggAnalys(garden)
+    .filter(p => !p.farSolNog && p.ljusforlust >= LJUSFORLUST_NOTERING)
+    .map(p => {
+      const forlust = Math.round(p.ljusforlust * 100);
+      const varning = p.ljusforlust >= LJUSFORLUST_VARNING;
+      const bov = p.kallor[0];
+      const avVem = bov ? ` Mest skugga kommer från ${bov.namn}.` : "";
+      return {
+        id: `skugga-${p.rowId}`,
+        niva: varning ? "varning" : "info",
+        rubrik: `${p.namn} får bara ~${p.soltimmar} h sol (behöver ${p.kravTimmar} h)`,
+        text: `Vid ${p.sasongNamn.toLowerCase()} skuggas ungefär ${forlust} % av dagens ljus ` +
+          `bort från raden med ${p.namn}, som vill ha ${p.solbehov}.${avVem} ` +
+          `Flytta raden till solsidan eller byt plats med en lägre gröda.`,
+        rowId: p.rowId,
+      } satisfies Warning;
+    });
 }
 
 export const TRANGT_GRANS_TEXT =
