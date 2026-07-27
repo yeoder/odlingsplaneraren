@@ -2,7 +2,7 @@
   import { onMount, onDestroy } from "svelte";
   import Konva from "konva";
   import {
-    GRID_CM, MIN_COMPRESSION, MAX_COMPRESSION, snap, overlaps, saveGarden, rowRect,
+    GRID_CM, MIN_COMPRESSION, MAX_COMPRESSION, MIN_ROW_COMPRESSION, rowComp, snap, overlaps, saveGarden, rowRect,
     rectsOverlap, rectInside, rotatedBox, rotatedRow, plantHeight,
     type Garden, type Box, type PlantRow, type Rect,
   } from "./model";
@@ -34,6 +34,25 @@
 
   // hovertext som följer muspekaren
   let hover = { visible: false, x: 0, y: 0, namn: "", rad1: "", rad2: "", status: "" };
+
+  // Egen inmatningsdialog. window.prompt() finns inte i alla miljöer (kastar
+  // "prompt() is not supported"), så namngivning och antal görs i appen i stället.
+  let dialog: {
+    visible: boolean; titel: string; varde: string; typ: "text" | "number";
+    onOk: (v: string) => void;
+  } = { visible: false, titel: "", varde: "", typ: "text", onOk: () => {} };
+  let dialogInput: HTMLInputElement | undefined;
+
+  function askInput(titel: string, varde: string, typ: "text" | "number", onOk: (v: string) => void) {
+    dialog = { visible: true, titel, varde, typ, onOk };
+    setTimeout(() => { dialogInput?.focus(); dialogInput?.select(); }, 0);
+  }
+  function dialogOk() {
+    const v = dialog.varde;
+    dialog = { ...dialog, visible: false };
+    dialog.onOk(v);
+  }
+  function dialogCancel() { dialog = { ...dialog, visible: false }; }
 
   // Under placering stängs panorering av: annars blir minsta musrörelse med knappen nere
   // ett scendrag istället för ett klick, och ingenting placeras.
@@ -92,13 +111,19 @@
   // `wanted` = önskad avståndsfaktor (>1 = utglesad); krymps om raden inte får plats.
   function fitRow(plantId: string, count: number, rotationDeg: number,
                   cx: number, cy: number, box: Box, ignoreRowId?: number,
-                  wanted = 1): PlantRow | null {
+                  wanted = 1, wantedRow = 1): PlantRow | null {
     const plant = plantById[plantId];
     const iRad = plant.avstand_i_rad_cm;
     const vertical = rotationDeg % 180 !== 0;
     const along = vertical ? box.h : box.w;   // boxens mått längs raden
     const across = vertical ? box.w : box.h;  // tvärs raden
-    if (across < plant.radavstand_cm) return null; // radavståndet får inte plats på tvären
+
+    // radavståndet krymps bara så långt som behövs för att rymmas på tvären
+    let rowCompression = Math.min(Math.max(wantedRow, MIN_ROW_COMPRESSION), 1);
+    if (plant.radavstand_cm * rowCompression > across) {
+      rowCompression = across / plant.radavstand_cm;
+      if (rowCompression < MIN_ROW_COMPRESSION) return null;
+    }
 
     let compression = Math.min(Math.max(wanted, MIN_COMPRESSION), MAX_COMPRESSION);
     if (count * iRad * compression > along) {
@@ -108,7 +133,7 @@
 
     const row: PlantRow = {
       id: -1, boxId: box.id, plantId, count,
-      x: snap(cx), y: snap(cy), rotationDeg, compression,
+      x: snap(cx), y: snap(cy), rotationDeg, compression, rowCompression,
     };
     // kläm in mittpunkten så rektangeln hamnar helt i boxen
     const r0 = rowRect(row, plant);
@@ -244,43 +269,50 @@
       cornerRadius: Math.min(iRad, rAvst) / 2,
     }));
 
-    // Enskild planta ritas som ellips: avstånd i raden × radavstånd. En morot upptar
-    // 4 × 20 cm — smal längs raden, bredare på tvären — och det syns direkt i formen.
     const vertical = row.rotationDeg % 180 !== 0;
     const step = iRad * row.compression;
-    const rxRek = (vertical ? rAvst : iRad) / 2 * 0.85;
-    const ryRek = (vertical ? iRad : rAvst) / 2 * 0.85;
 
+    // Radens kantlinjer visar radavståndet — bandets bredd är utrymmet raden tar
+    // på tvären. Plantorna själva ritas som cirklar (avståndet i raden).
+    if (!opts.ghost) {
+      const kant = { stroke: plant.farg, strokeWidth: 1.4 / s, opacity: 0.75, listening: false };
+      if (vertical) {
+        g.add(new Konva.Line({ points: [local.x, local.y, local.x, local.y + r.h], ...kant }));
+        g.add(new Konva.Line({ points: [local.x + r.w, local.y, local.x + r.w, local.y + r.h], ...kant }));
+      } else {
+        g.add(new Konva.Line({ points: [local.x, local.y, local.x + r.w, local.y], ...kant }));
+        g.add(new Konva.Line({ points: [local.x, local.y + r.h, local.x + r.w, local.y + r.h], ...kant }));
+      }
+    }
+
+    // Plantan är en cirkel med växtens avstånd i raden som diameter.
+    const radie = iRad / 2 * 0.85;
     for (let i = 0; i < row.count; i++) {
       const off = (i + 0.5) * step - (row.count * step) / 2;
       const px = local.x + r.w / 2 + (vertical ? 0 : off);
       const py = local.y + r.h / 2 + (vertical ? off : 0);
 
-      // Utglesad rad: streckad ellips visar utrymmet plantan fått. Den fyllda formen
-      // hålls alltid på växtens verkliga fotavtryck – mer plats gör inte plantan större.
+      // Utglesad rad: streckad ring visar utrymmet plantan fått. Den fyllda cirkeln
+      // hålls alltid på växtens verkliga mått – mer plats gör inte plantan större.
       if (spread && !opts.ghost) {
-        g.add(new Konva.Ellipse({
-          x: px, y: py,
-          radiusX: (vertical ? rAvst : step) / 2 * 0.9,
-          radiusY: (vertical ? step : rAvst) / 2 * 0.9,
+        g.add(new Konva.Circle({
+          x: px, y: py, radius: step / 2 * 0.9,
           stroke: plant.farg, strokeWidth: 1 / s,
           dash: [4 / s, 3 / s], opacity: 0.5, listening: false,
         }));
       }
 
-      g.add(new Konva.Ellipse({
-        x: px, y: py, radiusX: rxRek, radiusY: ryRek,
+      g.add(new Konva.Circle({
+        x: px, y: py, radius: radie,
         fill: plant.farg, opacity: opts.ghost ? 0.5 : 0.9,
         stroke: "#ffffff88", strokeWidth: 1 / s,
       }));
 
-      // symbolen ritas bara när den får plats i det smalaste ledet
-      const minRadie = Math.min(rxRek, ryRek);
-      if (minRadie * s >= 5) {
+      if (radie * s >= 5) {
         g.add(new Konva.Text({
-          x: px - minRadie, y: py - minRadie * 0.7,
-          width: minRadie * 2, align: "center",
-          text: plant.symbol, fontSize: minRadie * 1.2,
+          x: px - radie, y: py - radie * 0.7,
+          width: radie * 2, align: "center",
+          text: plant.symbol, fontSize: radie * 1.2,
           listening: false,
         }));
       }
@@ -361,7 +393,7 @@
         const cx = g.x() + r.w / 2, cy = g.y() + r.h / 2;
         const box = odlingBoxAt(cx, cy);
         const fitted = box
-          ? fitRow(row.plantId, row.count, row.rotationDeg, cx, cy, box, row.id, row.compression)
+          ? fitRow(row.plantId, row.count, row.rotationDeg, cx, cy, box, row.id, row.compression, rowComp(row))
           : null;
         if (fitted) {
           row.x = fitted.x; row.y = fitted.y;
@@ -590,7 +622,7 @@
       const box = garden.boxes.find(bb => bb.id === row.boxId);
       if (box) {
         const fitted = fitRow(row.plantId, row.count, (row.rotationDeg + 90) % 180,
-                             row.x, row.y, box, row.id, row.compression);
+                             row.x, row.y, box, row.id, row.compression, rowComp(row));
         if (fitted) {
           row.rotationDeg = fitted.rotationDeg;
           row.x = fitted.x; row.y = fitted.y; row.compression = fitted.compression;
@@ -603,21 +635,20 @@
 
   function actCount() {
     const row = menuRow(); if (!row) return;
-    const v = prompt("Antal plantor i raden:", String(row.count));
-    if (v !== null) {
+    menu.visible = false;
+    askInput("Antal plantor i raden", String(row.count), "number", (v) => {
       const n = Math.max(1, Math.round(Number(v) || row.count));
       const box = garden.boxes.find(bb => bb.id === row.boxId);
-      if (box) {
-        const fitted = fitRow(row.plantId, n, row.rotationDeg, row.x, row.y, box, row.id, row.compression);
-        if (fitted) {
-          row.count = n; row.x = fitted.x; row.y = fitted.y; row.compression = fitted.compression;
-          commit(); renderRows();
-        } else {
-          alert(`${n} st ryms inte här (max 20 % komprimering).`);
-        }
+      if (!box) return;
+      const fitted = fitRow(row.plantId, n, row.rotationDeg, row.x, row.y, box, row.id,
+                            row.compression, rowComp(row));
+      if (fitted) {
+        row.count = n; row.x = fitted.x; row.y = fitted.y; row.compression = fitted.compression;
+        commit(); renderRows();
+      } else {
+        alert(`${n} st ryms inte här (max 20 % komprimering i raden).`);
       }
-    }
-    menu.visible = false;
+    });
   }
 
   // Sprider ut radens plantor så de fyller rutans längd (t.ex. 3 pumpor i en hel ruta),
@@ -629,7 +660,8 @@
     const d = plantById[row.plantId].avstand_i_rad_cm;
     const along = row.rotationDeg % 180 !== 0 ? box.h : box.w;
     const wanted = mode === "sprid" ? along / (row.count * d) : 1;
-    const fitted = fitRow(row.plantId, row.count, row.rotationDeg, row.x, row.y, box, row.id, wanted);
+    const fitted = fitRow(row.plantId, row.count, row.rotationDeg, row.x, row.y, box, row.id,
+                          wanted, rowComp(row));
     if (fitted) {
       row.x = fitted.x; row.y = fitted.y; row.compression = fitted.compression;
       commit(); renderRows();
@@ -637,11 +669,30 @@
     menu.visible = false;
   }
 
+  // Radavståndet (radens bredd) kan kortas mer än avståndet i raden — i en bädd når
+  // man in från sidan, så en del av standardavståndet är arbetsutrymme man inte behöver.
+  function actRowSpacing(steg: number) {
+    const row = menuRow(); if (!row) return;
+    const box = garden.boxes.find(bb => bb.id === row.boxId);
+    if (!box) return;
+    const wantedRow = Math.min(Math.max(rowComp(row) + steg, MIN_ROW_COMPRESSION), 1);
+    const fitted = fitRow(row.plantId, row.count, row.rotationDeg, row.x, row.y, box, row.id,
+                          row.compression, wantedRow);
+    if (fitted) {
+      row.x = fitted.x; row.y = fitted.y;
+      row.compression = fitted.compression; row.rowCompression = fitted.rowCompression;
+      commit(); renderRows();
+    }
+    menu.visible = false;
+  }
+
   function actRename() {
     const b = menuBox(); if (!b) return;
-    const name = prompt("Namn på odlingsrutan:", b.label);
-    if (name !== null) { b.label = name.trim(); commit(); renderBoxes(); }
     menu.visible = false;
+    askInput("Namn på odlingsrutan", b.label, "text", (name) => {
+      b.label = name.trim();
+      commit(); renderBoxes();
+    });
   }
 
   function actDelete() {
@@ -878,11 +929,27 @@
         <button on:click={actCount}>🔢 Ändra antal…</button>
         <button on:click={() => actSpacing("sprid")}>↔ Sprid ut i rutan</button>
         <button on:click={() => actSpacing("normal")}>⇥ Normalt avstånd</button>
+        <button on:click={() => actRowSpacing(-0.1)}>⇕ Smalare rad</button>
+        <button on:click={() => actRowSpacing(0.1)}>⇕ Bredare rad</button>
       {/if}
       {#if menu.kind === "box" && menuBox()?.typ === "odling"}
         <button on:click={actRename}>✏️ Namnge…</button>
       {/if}
       <button class="danger" on:click={actDelete}>🗑 Ta bort</button>
+    </div>
+  {/if}
+
+  {#if dialog.visible}
+    <div class="dlg-backdrop" on:click={dialogCancel}>
+      <div class="dlg" on:click|stopPropagation>
+        <label for="dlg-input">{dialog.titel}</label>
+        <input id="dlg-input" bind:this={dialogInput} type={dialog.typ} bind:value={dialog.varde}
+               on:keydown={(e) => { if (e.key === "Enter") dialogOk(); if (e.key === "Escape") dialogCancel(); }} />
+        <div class="dlg-btns">
+          <button on:click={dialogCancel}>Avbryt</button>
+          <button class="primary" on:click={dialogOk}>OK</button>
+        </div>
+      </div>
     </div>
   {/if}
 </div>
@@ -924,4 +991,24 @@
   }
   .menu button:hover { background: #eaf2e3; }
   .menu button.danger:hover { background: #fde8e6; color: #b3402a; }
+
+  .dlg-backdrop {
+    position: absolute; inset: 0; z-index: 30; background: #2e2a2233;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .dlg {
+    background: #fff; border: 1px solid #d8d2c4; border-radius: 10px;
+    padding: 16px; min-width: 260px; box-shadow: 0 6px 24px #0004;
+    display: flex; flex-direction: column; gap: 8px;
+  }
+  .dlg label { font-size: 0.85rem; font-weight: 600; }
+  .dlg input {
+    border: 1px solid #d8d2c4; border-radius: 5px; padding: 7px 9px; font-size: 0.9rem;
+  }
+  .dlg-btns { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
+  .dlg-btns button {
+    border: 1px solid #d8d2c4; border-radius: 6px; background: #faf8f3;
+    padding: 6px 14px; cursor: pointer; font-size: 0.85rem;
+  }
+  .dlg-btns button.primary { background: #4e7a3a; color: #fff; border-color: #4e7a3a; }
 </style>

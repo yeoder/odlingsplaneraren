@@ -8,6 +8,7 @@ export interface Garden {
   locked: boolean; // låst layout: boxar kan inte flyttas/ändras, bara planteras i
   showLabels: boolean; // visa namnskyltar vid varje rad
   plantHeights: Record<string, number>; // användarens höjdjusteringar per växt (cm)
+  sistaFrostDatum: string; // ISO-datum, utgångspunkt för hela årsschemat
   boxes: Box[];
   rows: PlantRow[];
 }
@@ -32,26 +33,37 @@ export interface PlantRow {
   x: number; // cm, radens mittpunkt
   y: number;
   rotationDeg: number;
-  // Avståndsfaktor mot växtens rekommenderade avstånd.
+  // Avståndsfaktor mot växtens rekommenderade avstånd I RADEN.
   // < 1 = trängre än rekommenderat (varnas), 1 = precis rätt, > 1 = utglesat.
   compression: number;
+  // Motsvarande faktor för RADAVSTÅNDET (radens bredd). Saknas i äldre sparfiler
+  // och tolkas då som 1. Får krympas mer än avståndet i raden — se MIN_ROW_COMPRESSION.
+  rowCompression?: number;
 }
 
 export function newGarden(): Garden {
   return {
     widthCm: 800, heightCm: 500, sunDirectionDeg: 0, locked: false,
-    showLabels: false, plantHeights: {}, boxes: [], rows: [],
+    showLabels: false, plantHeights: {}, sistaFrostDatum: "2026-05-15",
+    boxes: [], rows: [],
   };
+}
+
+export function rowComp(r: PlantRow): number {
+  return r.rowCompression ?? 1;
 }
 
 export function snap(cm: number): number {
   return Math.round(cm / GRID_CM) * GRID_CM;
 }
 
-// Hur tätt en plantrad får tryckas ihop (0.8 = 20 % under rek. avstånd)
+// Hur tätt plantorna i raden får tryckas ihop (0.8 = 20 % under rek. avstånd)
 export const MIN_COMPRESSION = 0.8;
-// Hur glest den får spridas ut (3 = tredubbelt avstånd, för t.ex. färre pumpor i en hel ruta)
+// Hur glest de får spridas ut (3 = tredubbelt avstånd, för t.ex. färre pumpor i en hel ruta)
 export const MAX_COMPRESSION = 3;
+// Radavståndet får kortas mer: en stor del av det är arbetsutrymme, och i en bädd
+// når man in från sidan. 0.6 = 40 % kortare än standardrekommendationen.
+export const MIN_ROW_COMPRESSION = 0.6;
 
 export interface Rect { x: number; y: number; w: number; h: number }
 
@@ -66,7 +78,7 @@ export interface Spacing {
 // det är radavståndet som håller isär två rader intill varandra.
 export function rowRect(r: PlantRow, s: Spacing): Rect {
   const L = r.count * s.avstand_i_rad_cm * r.compression;
-  const W = s.radavstand_cm;
+  const W = s.radavstand_cm * rowComp(r);
   const vertical = r.rotationDeg % 180 !== 0;
   const w = vertical ? W : L;
   const h = vertical ? L : W;

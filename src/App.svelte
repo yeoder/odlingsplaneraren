@@ -3,6 +3,7 @@
   import { loadGarden, saveGarden, snap, plantHeight } from "./lib/model";
   import { PLANTS, plantById, plantsPerM2, type Plant } from "./lib/plants";
   import { computeWarnings, type Warning } from "./lib/rules";
+  import { computeSchedule, formateraDatum, ATGARD_RUBRIK, type Vecka, type Atgard } from "./lib/schedule";
 
   // let (inte const): omtilldelas efter mutationer så Svelte uppdaterar vyn
   let garden = loadGarden();
@@ -10,7 +11,18 @@
 
   let warnings: Warning[] = computeWarnings(garden);
   let selection: { kind: "box" | "row"; id: number } | null = null;
-  function refreshWarnings() { warnings = computeWarnings(garden); }
+  let schema: Vecka[] = computeSchedule(garden);
+  const ATGARDER: Atgard[] = ["forsa", "direktsa", "planteraUt"];
+
+  function refreshWarnings() {
+    warnings = computeWarnings(garden);
+    schema = computeSchedule(garden);
+  }
+
+  function frostChanged() {
+    saveGarden(garden);
+    schema = computeSchedule(garden);
+  }
 
   // minimerade varningar (id → hopfälld)
   let collapsed: Record<string, boolean> = {};
@@ -122,6 +134,9 @@
       <input type="number" bind:value={widthM} min="1" max="100" step="0.5" on:change={applySize} /> ×
       <input type="number" bind:value={heightM} min="1" max="100" step="0.5" on:change={applySize} /> m
     </label>
+    <label title="Utgångspunkt för hela årsschemat">Sista vårfrost:
+      <input type="date" class="date" bind:value={garden.sistaFrostDatum} on:change={frostChanged} />
+    </label>
   </div>
 </header>
 
@@ -223,6 +238,52 @@
   {/if}
 </main>
 
+<section class="schema">
+  <div class="schema-head">
+    <h2>Årsschema — vad gör jag när?</h2>
+    <span class="schema-hint">
+      Veckorna räknas från sista vårfrost ({garden.sistaFrostDatum}). Skörd står inte med –
+      den sker när grödan ser färdig ut, inte efter kalender.
+    </span>
+  </div>
+
+  {#if schema.length === 0}
+    <p class="schema-tom">Plantera något i odlingen så byggs schemat upp här automatiskt.</p>
+  {:else}
+    <div class="schema-scroll">
+      <table>
+        <thead>
+          <tr>
+            <th class="vkol">Vecka</th>
+            {#each ATGARDER as a}<th>{ATGARD_RUBRIK[a]}</th>{/each}
+          </tr>
+        </thead>
+        <tbody>
+          {#each schema as v}
+            <tr>
+              <td class="vkol">
+                <strong>V {v.vecka}</strong>
+                <span class="vdatum">{formateraDatum(v.datum)}</span>
+              </td>
+              {#each ATGARDER as a}
+                <td>
+                  {#if v.atgarder[a].length}
+                    {#each v.atgarder[a] as post}
+                      <span class="chip {a}">{post.text}</span>
+                    {/each}
+                  {:else}
+                    <span class="tomcell">–</span>
+                  {/if}
+                </td>
+              {/each}
+            </tr>
+          {/each}
+        </tbody>
+      </table>
+    </div>
+  {/if}
+</section>
+
 <svelte:window on:keydown={(e) => { if (infoPlantId && e.key === "Escape") infoPlantId = null; }} />
 
 {#if infoPlant}
@@ -249,6 +310,10 @@
         </div>
         <div class="stat"><span class="statlabel">🕐 Skördetid</span><span>~{infoPlant.dagar_till_skord} dagar</span></div>
       </div>
+
+      {#if infoPlant.avstand_notering}
+        <p class="notering">ℹ️ {infoPlant.avstand_notering}</p>
+      {/if}
 
       <div class="heightbox">
         <span class="statlabel">📐 Höjd — påverkar skuggberäkningen</span>
@@ -303,6 +368,7 @@
   h1 { font-size: 1.15rem; margin: 0; }
   .controls { display: flex; align-items: center; gap: 14px; font-size: 0.9rem; flex-wrap: wrap; }
   header input { width: 60px; border: none; border-radius: 4px; padding: 4px 6px; }
+  header input.date { width: auto; }
   .toolbar {
     display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
     padding: 8px 18px; background: #fff; border-bottom: 1px solid #d8d2c4; font-size: 0.85rem;
@@ -398,6 +464,11 @@
   .warn.info .minbtn { border-color: #cfe0c4; }
   .warntext { color: #6d6757; line-height: 1.45; }
 
+  .notering {
+    font-size: 0.75rem; color: #5f5a4b; line-height: 1.45; margin: 0 0 10px;
+    background: #f6f2e7; border-left: 3px solid #d8c9a0; border-radius: 0 5px 5px 0;
+    padding: 7px 10px;
+  }
   .heightbox {
     border: 1px solid #eee5d3; border-radius: 8px; padding: 8px 10px;
     background: #faf8f3; margin-bottom: 4px;
@@ -412,6 +483,35 @@
     border: none; background: none; color: #4e7a3a; cursor: pointer;
     font-size: 0.74rem; padding: 4px 0 0; text-decoration: underline;
   }
+
+  /* ---- årsschema ---- */
+  .schema {
+    flex: none; margin: 0 12px 12px; background: #fff; border: 1px solid #d8d2c4;
+    border-radius: 8px; padding: 12px; max-height: 34vh; display: flex; flex-direction: column;
+  }
+  .schema-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 8px; }
+  .schema h2 { font-size: 0.95rem; margin: 0; }
+  .schema-hint { font-size: 0.72rem; color: #8a8371; }
+  .schema-tom { font-size: 0.78rem; color: #77705f; margin: 0; }
+  .schema-scroll { overflow: auto; min-height: 0; }
+  .schema table { border-collapse: collapse; width: 100%; font-size: 0.78rem; }
+  .schema th, .schema td {
+    border-bottom: 1px solid #eee5d3; padding: 5px 8px; text-align: left; vertical-align: top;
+  }
+  .schema thead th {
+    position: sticky; top: 0; background: #faf8f3; z-index: 1;
+    font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.03em; color: #8a8371;
+  }
+  .schema .vkol { white-space: nowrap; width: 1%; }
+  .vdatum { display: block; font-size: 0.68rem; color: #a89d87; }
+  .chip {
+    display: inline-block; margin: 1px 3px 1px 0; padding: 2px 8px;
+    border-radius: 12px; font-size: 0.74rem; border: 1px solid;
+  }
+  .chip.forsa { background: #f3ecfa; border-color: #d9c9ec; color: #5b3a86; }
+  .chip.direktsa { background: #eef6e8; border-color: #cfe0c4; color: #3d6b28; }
+  .chip.planteraUt { background: #fdf3e6; border-color: #f0dcb8; color: #8a5d00; }
+  .tomcell { color: #d4cbb8; }
 
   .modal-backdrop {
     position: fixed; inset: 0; background: #2e2a2288; z-index: 100;

@@ -1,6 +1,6 @@
 // Regelmotor — rena funktioner av trädgårdens data, inga sidoeffekter.
 // Just nu: trängselvarningar. Kompanjon-, fukt- och skuggregler kommer i M3/M4.
-import { MIN_COMPRESSION, type Garden } from "./model";
+import { MIN_COMPRESSION, rowComp, type Garden } from "./model";
 import { plantById } from "./plants";
 
 export interface Warning {
@@ -48,6 +48,24 @@ export function computeWarnings(garden: Garden): Warning[] {
         text: `Plantorna har ${procentGlesare} % mer utrymme än rekommenderat ` +
           `(${faktisktCm} cm i stället för ${rekCm} cm). ` +
           `Det är helt i sin ordning – plantorna får gott om plats.`,
+        rowId: row.id,
+      });
+    }
+
+    // Kortat radavstånd bedöms mildare än trängsel i raden: en del av
+    // standardavståndet är arbetsutrymme som en odlingsbädd inte behöver.
+    const rk = rowComp(row);
+    if (rk < 0.999) {
+      const procent = Math.round((1 - rk) * 100);
+      const faktisktRad = formatCm(Math.round(plant.radavstand_cm * rk * 10) / 10);
+      out.push({
+        id: `smalrad-${row.id}`,
+        niva: procent > 25 ? "varning" : "info",
+        rubrik: `${plant.namn}: radavståndet är kortat ${procent} %`,
+        text: `Raden är ${faktisktRad} cm bred i stället för ${formatCm(plant.radavstand_cm)} cm. ` +
+          `En del av standardavståndet är arbetsutrymme för att komma åt raden – i en ` +
+          `odlingsbädd når man in från sidan, så det går ofta bra att korta. ` +
+          `Blir det för trångt tappar plantorna ljus och luft nertill.`,
         rowId: row.id,
       });
     }
