@@ -12,6 +12,17 @@
   let selection: { kind: "box" | "row"; id: number } | null = null;
   function refreshWarnings() { warnings = computeWarnings(garden); }
 
+  // minimerade varningar (id → hopfälld)
+  let collapsed: Record<string, boolean> = {};
+  $: allCollapsed = warnings.length > 0 && warnings.every(w => collapsed[w.id]);
+  function toggleWarning(id: string) {
+    collapsed = { ...collapsed, [id]: !collapsed[id] };
+  }
+  function toggleAllWarnings() {
+    const fäll = !allCollapsed;
+    collapsed = Object.fromEntries(warnings.map(w => [w.id, fäll]));
+  }
+
   let widthM = garden.widthCm / 100;
   let heightM = garden.heightCm / 100;
 
@@ -96,9 +107,9 @@
   const VATTEN_TEXT: Record<Plant["vattenbehov"], string> = {
     "låg": "Lite", "medel": "Måttligt", "hög": "Mycket",
   };
-  function densityText(avstandCm: number): string {
-    const perM2 = plantsPerM2(avstandCm);
-    if (perM2 >= 1) return `${Math.round(perM2 * 10) / 10} st/m²`;
+  function densityText(p: Plant): string {
+    const perM2 = plantsPerM2(p);
+    if (perM2 >= 1) return `${Math.round(perM2)} st/m²`;
     const areaPerPlant = Math.round((1 / perM2) * 10) / 10;
     return `1 st/${areaPerPlant} m²`;
   }
@@ -164,7 +175,7 @@
             <span class="pinfo">
               <span class="pnamn">{p.namn}</span>
               <span class="pmeta">
-                ø{p.avstand_cm} cm · {plantHeight(garden, p.id, p.hojd_cm)} cm hög
+                {p.avstand_i_rad_cm}×{p.radavstand_cm} cm · {plantHeight(garden, p.id, p.hojd_cm)} cm hög
                 {#if garden.plantHeights[p.id]}<em>✎</em>{/if}
               </span>
             </span>
@@ -185,13 +196,28 @@
 
   {#if warnings.length}
     <section class="warnpanel">
-      <h2>Varningar &amp; noteringar</h2>
-      {#each warnings as w}
-        <button class="warn" class:info={w.niva === "info"}
-                on:click={() => w.rowId != null && canvas.selectRow(w.rowId)}>
-          <span class="warnhead">{w.niva === "varning" ? "⚠" : "ℹ"} {w.rubrik}</span>
-          <span class="warntext">{w.text}</span>
+      <div class="warnhead-row">
+        <h2>Varningar &amp; noteringar <span class="count">{warnings.length}</span></h2>
+        <button class="linkbtn" on:click={toggleAllWarnings}>
+          {allCollapsed ? "Visa alla" : "Minimera alla"}
         </button>
+      </div>
+      {#each warnings as w}
+        <div class="warn" class:info={w.niva === "info"} class:collapsed={collapsed[w.id]}>
+          <div class="warnrow">
+            <button class="warnhead" on:click={() => w.rowId != null && canvas.selectRow(w.rowId)}>
+              {w.niva === "varning" ? "⚠" : "ℹ"} {w.rubrik}
+            </button>
+            <button class="minbtn" on:click={() => toggleWarning(w.id)}
+                    title={collapsed[w.id] ? "Visa förklaring" : "Minimera"}
+                    aria-label={collapsed[w.id] ? "Visa förklaring" : "Minimera"}>
+              {collapsed[w.id] ? "+" : "−"}
+            </button>
+          </div>
+          {#if !collapsed[w.id]}
+            <span class="warntext">{w.text}</span>
+          {/if}
+        </div>
       {/each}
     </section>
   {/if}
@@ -212,7 +238,11 @@
         <div class="stat"><span class="statlabel">☀️ Sol</span><span>{SOL_TEXT[infoPlant.solbehov]}</span></div>
         <div class="stat"><span class="statlabel">💧 Vatten</span><span>{VATTEN_TEXT[infoPlant.vattenbehov]}</span></div>
         <div class="stat"><span class="statlabel">⛰️ Jord</span><span>{infoPlant.jord}</span></div>
-        <div class="stat"><span class="statlabel">📏 Täthet</span><span>{densityText(infoPlant.avstand_cm)}</span></div>
+        <div class="stat"><span class="statlabel">📏 Täthet</span><span>{densityText(infoPlant)}</span></div>
+        <div class="stat">
+          <span class="statlabel">↔ Avstånd</span>
+          <span>{infoPlant.avstand_i_rad_cm} cm i raden<br />{infoPlant.radavstand_cm} cm mellan rader</span>
+        </div>
         <div class="stat">
           <span class="statlabel">⚖️ Skörd</span>
           <span>{infoPlant.skord_kg_per_m2 != null ? `${infoPlant.skord_kg_per_m2} kg/m²` : "Prydnadsväxt"}</span>
@@ -337,16 +367,35 @@
     border-radius: 8px; padding: 12px; overflow-y: auto; display: flex;
     flex-direction: column; gap: 6px;
   }
-  .warnpanel h2 { font-size: 0.95rem; margin: 0 0 4px; }
+  .warnpanel h2 { font-size: 0.95rem; margin: 0; }
+  .warnhead-row {
+    display: flex; align-items: baseline; justify-content: space-between;
+    gap: 8px; margin-bottom: 4px;
+  }
+  .count {
+    background: #e6ddc8; color: #6d6757; border-radius: 10px;
+    padding: 1px 7px; font-size: 0.72rem; font-weight: 600;
+  }
   .warn {
-    text-align: left; border: 1px solid #f0d9a0; background: #fdf7e6;
-    border-radius: 8px; padding: 8px 10px; cursor: pointer;
+    border: 1px solid #f0d9a0; background: #fdf7e6;
+    border-radius: 8px; padding: 6px 8px;
     display: flex; flex-direction: column; gap: 4px; font-size: 0.78rem;
   }
-  .warn:hover { border-color: #e6a700; }
   .warn.info { border-color: #cfe0c4; background: #f3f8ef; }
-  .warnhead { font-weight: 600; color: #8a6d00; }
+  .warnrow { display: flex; align-items: flex-start; gap: 6px; }
+  .warnhead {
+    flex: 1; text-align: left; border: none; background: none; cursor: pointer;
+    font-weight: 600; color: #8a6d00; font-size: 0.78rem; padding: 0; line-height: 1.35;
+  }
+  .warnhead:hover { text-decoration: underline; }
   .warn.info .warnhead { color: #3d6b28; }
+  .minbtn {
+    flex: none; width: 20px; height: 20px; border: 1px solid #e0d4b0;
+    border-radius: 4px; background: #fff; cursor: pointer;
+    font-size: 0.85rem; line-height: 1; color: #8a8371; padding: 0;
+  }
+  .minbtn:hover { background: #f0e6cc; }
+  .warn.info .minbtn { border-color: #cfe0c4; }
   .warntext { color: #6d6757; line-height: 1.45; }
 
   .heightbox {

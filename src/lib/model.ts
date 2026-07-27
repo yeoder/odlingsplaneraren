@@ -55,10 +55,18 @@ export const MAX_COMPRESSION = 3;
 
 export interface Rect { x: number; y: number; w: number; h: number }
 
-// Plantradens fotavtryck i cm (rektangel runt mittpunkten, roterad i 90°-steg)
-export function rowRect(r: PlantRow, avstandCm: number): Rect {
-  const L = r.count * avstandCm * r.compression;
-  const W = avstandCm;
+// Minsta delen av en växt som geometrin behöver: avstånd längs raden och mellan rader.
+export interface Spacing {
+  avstand_i_rad_cm: number;
+  radavstand_cm: number;
+}
+
+// Plantradens fotavtryck i cm (rektangel runt mittpunkten, roterad i 90°-steg).
+// Längden styrs av avståndet i raden (× komprimering), bredden av radavståndet —
+// det är radavståndet som håller isär två rader intill varandra.
+export function rowRect(r: PlantRow, s: Spacing): Rect {
+  const L = r.count * s.avstand_i_rad_cm * r.compression;
+  const W = s.radavstand_cm;
   const vertical = r.rotationDeg % 180 !== 0;
   const w = vertical ? W : L;
   const h = vertical ? L : W;

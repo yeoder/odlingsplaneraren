@@ -24,8 +24,8 @@ export function computeWarnings(garden: Garden): Warning[] {
     const plant = plantById[row.plantId];
     if (!plant) continue;
 
-    const faktisktCm = formatCm(Math.round(plant.avstand_cm * row.compression * 10) / 10);
-    const rekCm = formatCm(plant.avstand_cm);
+    const faktisktCm = formatCm(Math.round(plant.avstand_i_rad_cm * row.compression * 10) / 10);
+    const rekCm = formatCm(plant.avstand_i_rad_cm);
 
     if (row.compression < 0.999) {
       const procentTrangre = Math.round((1 - row.compression) * 100);
@@ -33,7 +33,7 @@ export function computeWarnings(garden: Garden): Warning[] {
         id: `trangt-${row.id}`,
         niva: "varning",
         rubrik: `${row.count} × ${plant.namn} står trångt`,
-        text: `Plantorna står ${procentTrangre} % tätare än rekommenderat ` +
+        text: `Plantorna står ${procentTrangre} % tätare än rekommenderat i raden ` +
           `(${faktisktCm} cm i stället för ${rekCm} cm). ` +
           `Det går att odla så, men räkna med mindre plantor och sämre luftcirkulation. ` +
           `Minska antalet eller använd en längre odlingsruta för fullt avstånd.`,

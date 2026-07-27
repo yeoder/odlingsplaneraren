@@ -93,15 +93,16 @@
   function fitRow(plantId: string, count: number, rotationDeg: number,
                   cx: number, cy: number, box: Box, ignoreRowId?: number,
                   wanted = 1): PlantRow | null {
-    const d = plantById[plantId].avstand_cm;
+    const plant = plantById[plantId];
+    const iRad = plant.avstand_i_rad_cm;
     const vertical = rotationDeg % 180 !== 0;
     const along = vertical ? box.h : box.w;   // boxens mått längs raden
     const across = vertical ? box.w : box.h;  // tvärs raden
-    if (across < d) return null;              // raden är bredare än boxen
+    if (across < plant.radavstand_cm) return null; // radavståndet får inte plats på tvären
 
     let compression = Math.min(Math.max(wanted, MIN_COMPRESSION), MAX_COMPRESSION);
-    if (count * d * compression > along) {
-      compression = along / (count * d);
+    if (count * iRad * compression > along) {
+      compression = along / (count * iRad);
       if (compression < MIN_COMPRESSION) return null; // mer än 20 % för trångt
     }
 
@@ -110,15 +111,15 @@
       x: snap(cx), y: snap(cy), rotationDeg, compression,
     };
     // kläm in mittpunkten så rektangeln hamnar helt i boxen
-    const r0 = rowRect(row, d);
+    const r0 = rowRect(row, plant);
     row.x = snap(Math.min(Math.max(row.x, box.x + r0.w / 2), box.x + box.w - r0.w / 2));
     row.y = snap(Math.min(Math.max(row.y, box.y + r0.h / 2), box.y + box.h - r0.h / 2));
-    const r = rowRect(row, d);
+    const r = rowRect(row, plant);
     if (!rectInside(r, boxRect(box))) return null; // snap kan putta ut vid exakt passform
     // överlapp mot andra rader (oavsett box — rader ligger alltid i boxar)
     for (const q of garden.rows) {
       if (q.id === ignoreRowId) continue;
-      if (rectsOverlap(r, rowRect(q, plantById[q.plantId].avstand_cm))) return null;
+      if (rectsOverlap(r, rowRect(q, plantById[q.plantId]))) return null;
     }
     return row;
   }
@@ -190,11 +191,12 @@
         id: -1, boxId: -1, plantId: placingRow.plantId, count: placingRow.count,
         x: wp.x, y: wp.y, rotationDeg: placingRow.rotationDeg, compression: 1,
       };
-      const r = rowRect(preview, plant.avstand_cm);
+      const r = rowRect(preview, plant);
       g.add(new Konva.Rect({
         ...r, width: r.w, height: r.h,
         dash: [6, 4], stroke: "#c62828", fill: "#c6282822",
-        strokeWidth: 2 / stage.scaleX(), cornerRadius: plant.avstand_cm / 2,
+        strokeWidth: 2 / stage.scaleX(),
+        cornerRadius: Math.min(plant.avstand_i_rad_cm, plant.radavstand_cm) / 2,
       }));
     }
     ghostLayer.batchDraw();
@@ -224,58 +226,68 @@
   // --- rendering: plantrad ---
   function drawRowShape(g: Konva.Group, row: PlantRow, opts: { ghost?: boolean } = {}) {
     const plant = plantById[row.plantId];
-    const d = plant.avstand_cm;
-    const r = rowRect(row, d);
+    const iRad = plant.avstand_i_rad_cm;
+    const rAvst = plant.radavstand_cm;
+    const r = rowRect(row, plant);
     const tight = row.compression < 0.999;
     const spread = row.compression > 1.001;
     const local = opts.ghost ? { x: r.x, y: r.y } : { x: 0, y: 0 }; // riktiga rader ritas i grupp-koordinater
+    const s = stage.scaleX();
 
     // fotavtryck
     g.add(new Konva.Rect({
       x: local.x, y: local.y, width: r.w, height: r.h,
       fill: plant.farg + "33",
       stroke: opts.ghost ? "#4e7a3a" : tight ? "#e6a700" : plant.farg,
-      strokeWidth: (opts.ghost ? 2 : tight ? 2 : 1.2) / stage.scaleX(),
+      strokeWidth: (opts.ghost ? 2 : tight ? 2 : 1.2) / s,
       dash: opts.ghost ? [8, 4] : undefined,
-      cornerRadius: d / 2,
+      cornerRadius: Math.min(iRad, rAvst) / 2,
     }));
 
-    // enskilda plantor
+    // Enskild planta ritas som ellips: avstånd i raden × radavstånd. En morot upptar
+    // 4 × 20 cm — smal längs raden, bredare på tvären — och det syns direkt i formen.
     const vertical = row.rotationDeg % 180 !== 0;
-    const step = d * row.compression;
-    const radius = d / 2 * 0.85;
+    const step = iRad * row.compression;
+    const rxRek = (vertical ? rAvst : iRad) / 2 * 0.85;
+    const ryRek = (vertical ? iRad : rAvst) / 2 * 0.85;
+
     for (let i = 0; i < row.count; i++) {
       const off = (i + 0.5) * step - (row.count * step) / 2;
       const px = local.x + r.w / 2 + (vertical ? 0 : off);
       const py = local.y + r.h / 2 + (vertical ? off : 0);
 
-      // Utglesad rad: streckad ring visar utrymmet plantan fått. Själva plantcirkeln
+      // Utglesad rad: streckad ellips visar utrymmet plantan fått. Den fyllda formen
       // hålls alltid på växtens verkliga fotavtryck – mer plats gör inte plantan större.
       if (spread && !opts.ghost) {
-        g.add(new Konva.Circle({
-          x: px, y: py, radius: step / 2 * 0.9,
-          stroke: plant.farg, strokeWidth: 1 / stage.scaleX(),
-          dash: [4 / stage.scaleX(), 3 / stage.scaleX()], opacity: 0.5, listening: false,
+        g.add(new Konva.Ellipse({
+          x: px, y: py,
+          radiusX: (vertical ? rAvst : step) / 2 * 0.9,
+          radiusY: (vertical ? step : rAvst) / 2 * 0.9,
+          stroke: plant.farg, strokeWidth: 1 / s,
+          dash: [4 / s, 3 / s], opacity: 0.5, listening: false,
         }));
       }
 
-      g.add(new Konva.Circle({
-        x: px, y: py, radius,
+      g.add(new Konva.Ellipse({
+        x: px, y: py, radiusX: rxRek, radiusY: ryRek,
         fill: plant.farg, opacity: opts.ghost ? 0.5 : 0.9,
-        stroke: "#ffffff88", strokeWidth: 1 / stage.scaleX(),
+        stroke: "#ffffff88", strokeWidth: 1 / s,
       }));
-      if (d >= 10) {
+
+      // symbolen ritas bara när den får plats i det smalaste ledet
+      const minRadie = Math.min(rxRek, ryRek);
+      if (minRadie * s >= 5) {
         g.add(new Konva.Text({
-          x: px - radius, y: py - radius * 0.7,
-          width: radius * 2, align: "center",
-          text: plant.symbol, fontSize: radius * 1.2,
+          x: px - minRadie, y: py - minRadie * 0.7,
+          width: minRadie * 2, align: "center",
+          text: plant.symbol, fontSize: minRadie * 1.2,
           listening: false,
         }));
       }
     }
     if (tight && !opts.ghost) {
       g.add(new Konva.Text({
-        x: local.x + r.w - 14, y: local.y - 6, text: "⚠", fontSize: 14 / stage.scaleX(),
+        x: local.x + r.w - 14, y: local.y - 6, text: "⚠", fontSize: 14 / s,
         listening: false,
       }));
     }
@@ -284,7 +296,7 @@
   // Namnskylt bredvid raden — liten, utanför fotavtrycket så den inte skymmer plantorna.
   function drawRowLabel(g: Konva.Group, row: PlantRow) {
     const plant = plantById[row.plantId];
-    const r = rowRect(row, plant.avstand_cm);
+    const r = rowRect(row, plant);
     const s = stage.scaleX();
     const fontSize = 11 / s;
     const text = `${row.count} × ${plant.namn}`;
@@ -306,8 +318,7 @@
     rowLayer.destroyChildren();
     for (const row of garden.rows) {
       const plant = plantById[row.plantId];
-      const d = plant.avstand_cm;
-      const r = rowRect(row, d);
+      const r = rowRect(row, plant);
       const g = new Konva.Group({
         x: r.x, y: r.y, draggable: placing === null && placingRow === null,
       });
@@ -318,14 +329,15 @@
         g.add(new Konva.Rect({
           x: 0, y: 0, width: r.w, height: r.h,
           stroke: "#2e5d1e", strokeWidth: 2.5 / stage.scaleX(),
-          dash: [4, 3], cornerRadius: d / 2, listening: false,
+          dash: [4, 3], listening: false,
+          cornerRadius: Math.min(plant.avstand_i_rad_cm, plant.radavstand_cm) / 2,
         }));
       }
 
-      const faktisktCm = formatCm(Math.round(plant.avstand_cm * row.compression * 10) / 10);
+      const faktisktCm = formatCm(Math.round(plant.avstand_i_rad_cm * row.compression * 10) / 10);
       const title = {
         namn: `${plant.symbol} ${row.count} × ${plant.namn}`,
-        rad1: `Avstånd ${faktisktCm} cm (rek. ${plant.avstand_cm} cm)`,
+        rad1: `${faktisktCm} cm i raden (rek. ${plant.avstand_i_rad_cm}) · ${plant.radavstand_cm} cm mellan rader`,
         rad2: `Höjd ${plantHeight(garden, plant.id, plant.hojd_cm)} cm`,
         status: row.compression < 0.999
           ? `⚠ ${Math.round((1 - row.compression) * 100)} % trängre än rekommenderat`
@@ -524,11 +536,11 @@
     }
     const row = menuRow();
     if (row) {
-      const d = plantById[row.plantId].avstand_cm;
+      const d = plantById[row.plantId].radavstand_cm;
       const box = garden.boxes.find(bb => bb.id === row.boxId);
       if (box) {
         const vertical = row.rotationDeg % 180 !== 0;
-        // lägg dubbletten en radbredd åt sidan (tvärs raden)
+        // lägg dubbletten ett radavstånd åt sidan (tvärs raden)
         const offsets = vertical ? [[d, 0], [-d, 0]] : [[0, d], [0, -d]];
         for (const [dx, dy] of offsets) {
           const fitted = fitRow(row.plantId, row.count, row.rotationDeg, row.x + dx, row.y + dy, box);
@@ -555,11 +567,10 @@
     // varje roterad rad måste rymmas i den nya boxen och inte krocka med de andra
     const nbRect = { x: nb.x, y: nb.y, w: nb.w, h: nb.h };
     for (let i = 0; i < moved.length; i++) {
-      const d = plantById[moved[i].plantId].avstand_cm;
-      const ri = rowRect(moved[i], d);
+      const ri = rowRect(moved[i], plantById[moved[i].plantId]);
       if (!rectInside(ri, nbRect)) return false;
       for (let j = i + 1; j < moved.length; j++) {
-        if (rectsOverlap(ri, rowRect(moved[j], plantById[moved[j].plantId].avstand_cm))) return false;
+        if (rectsOverlap(ri, rowRect(moved[j], plantById[moved[j].plantId]))) return false;
       }
     }
 
@@ -615,7 +626,7 @@
     const row = menuRow(); if (!row) return;
     const box = garden.boxes.find(bb => bb.id === row.boxId);
     if (!box) return;
-    const d = plantById[row.plantId].avstand_cm;
+    const d = plantById[row.plantId].avstand_i_rad_cm;
     const along = row.rotationDeg % 180 !== 0 ? box.h : box.w;
     const wanted = mode === "sprid" ? along / (row.count * d) : 1;
     const fitted = fitRow(row.plantId, row.count, row.rotationDeg, row.x, row.y, box, row.id, wanted);
@@ -843,7 +854,8 @@
   {#if placingRow}
     <div class="placebar">
       Planterar {placingRow.count} × {plantById[placingRow.plantId].namn}
-      (avstånd {plantById[placingRow.plantId].avstand_cm} cm) —
+      ({plantById[placingRow.plantId].avstand_i_rad_cm} cm i raden,
+       {plantById[placingRow.plantId].radavstand_cm} cm radavstånd) —
       klicka i en odlingsruta · <b>R</b> roterar · <b>Esc</b> avslutar
       <button on:click={cancelPlacing}>Klar</button>
     </div>
