@@ -5,6 +5,7 @@
 // dagar_till_skord finns kvar i växtdatan som upplysning per växt.
 import type { Garden } from "./model";
 import { plantById, type Plant } from "./plants";
+import { FROSTMARGINAL_DAGAR } from "./klimat";
 
 export type Atgard = "forsa" | "direktsa" | "planteraUt";
 
@@ -76,19 +77,28 @@ export function fardigDatum(p: Plant, frostISO: string): Date {
 /**
  * Datum då grödan antas vara borttagen ur odlingen.
  *
- * dagar_till_skord säger bara när grödan blir färdig, inte hur länge den står kvar,
- * och skillnaden är stor: en rädisa dras upp direkt medan grönkål står kvar långt in
- * på vintern och morötter kan tas efterhand hela hösten. Därför har varje växt ett
- * eget skordeperiod_dagar i stället för en gemensam schablon.
+ * Två saker sätter gränsen, och den tidigaste vinner:
+ *  • Hur länge grödan står kvar efter mognad. dagar_till_skord säger bara när den
+ *    blir färdig — en rädisa dras upp direkt medan grönkål står kvar långt in på
+ *    vintern — därför har varje växt ett eget skordeperiod_dagar.
+ *  • Höstfrosten. Utan den skulle grönkål "stå till november" även i Kiruna, där
+ *    säsongen är slut i början av september. Frostkänsliga växter svartnar första
+ *    natten under noll, medan morot och palsternacka kan tas långt efteråt.
  */
-export function urJordDatum(p: Plant, frostISO: string): Date {
-  const d = fardigDatum(p, frostISO);
-  d.setDate(d.getDate() + (p.skordeperiod_dagar ?? Math.round(p.dagar_till_skord * 0.3)));
-  return d;
+export function urJordDatum(p: Plant, frostISO: string, hostfrostISO?: string): Date {
+  const efterMognad = fardigDatum(p, frostISO);
+  efterMognad.setDate(
+    efterMognad.getDate() + (p.skordeperiod_dagar ?? Math.round(p.dagar_till_skord * 0.3)));
+
+  if (!hostfrostISO) return efterMognad;
+
+  const frostgrans = new Date(hostfrostISO + "T12:00:00");
+  frostgrans.setDate(frostgrans.getDate() + FROSTMARGINAL_DAGAR[p.frosttalighet ?? "lätt"]);
+  return efterMognad < frostgrans ? efterMognad : frostgrans;
 }
 
-export function staarIJord(p: Plant, frostISO: string, datum: Date): boolean {
-  return datum >= iJordDatum(p, frostISO) && datum <= urJordDatum(p, frostISO);
+export function staarIJord(p: Plant, frostISO: string, datum: Date, hostfrostISO?: string): boolean {
+  return datum >= iJordDatum(p, frostISO) && datum <= urJordDatum(p, frostISO, hostfrostISO);
 }
 
 /**

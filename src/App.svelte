@@ -5,7 +5,8 @@
   import { PLANTS, plantById, plantsPerM2, type Plant } from "./lib/plants";
   import { computeWarnings, type Warning } from "./lib/rules";
   import { computeSchedule, formateraDatum, ATGARD_RUBRIK, type Vecka, type Atgard } from "./lib/schedule";
-  import { PLATSER, SASONGER, TIDER, MIN_SOLHOJD } from "./lib/sun";
+  import { PLATSER, SASONGER, TIDER, MIN_SOLHOJD, platsByNamn } from "./lib/sun";
+  import { uppskattadVarfrost, uppskattadHostfrost, sasongslangdDagar } from "./lib/klimat";
   import { skuggAnalys, type SkuggPost } from "./lib/shade";
 
   // let (inte const): omtilldelas efter mutationer så Svelte uppdaterar vyn
@@ -49,6 +50,17 @@
   $: if (visaSkuggoversyn) skuggposter = skuggAnalys(garden);
 
   // --- startsida ---
+  // Byte av ort föreslår nya frostdatum: säsongen i Kiruna är flera månader
+  // kortare än i Malmö, och det ändrar hela årsschemat.
+  function platsBytt() {
+    const p = platsByNamn(garden.platsNamn);
+    const ar = new Date(garden.sistaFrostDatum + "T12:00:00").getFullYear();
+    garden.sistaFrostDatum = uppskattadVarfrost(p, ar);
+    garden.forstaHostfrostDatum = uppskattadHostfrost(p, ar);
+    garden = garden;
+  }
+  $: sasongslangd = sasongslangdDagar(garden.sistaFrostDatum, garden.forstaHostfrostDatum);
+
   let panelHopfalld = false;
   let panLage = false;
   let visaInstallningar = false;
@@ -192,16 +204,25 @@
         </label>
 
         <label>Närmaste ort
-          <select bind:value={garden.platsNamn}>
+          <select bind:value={garden.platsNamn} on:change={platsBytt}>
             {#each PLATSER as p}<option value={p.namn}>{p.namn}</option>{/each}
           </select>
-          <small>Ger latitud för solens höjd och skuggornas längd.</small>
+          <small>Ger solens höjd, skuggornas längd och förslag på frostdatum.</small>
         </label>
 
-        <label>Sista vårfrost
-          <input type="date" bind:value={garden.sistaFrostDatum} />
-          <small>Hela årsschemat räknas från det här datumet.</small>
-        </label>
+        <div class="frostpar">
+          <label>Sista vårfrost
+            <input type="date" bind:value={garden.sistaFrostDatum} />
+          </label>
+          <label>Första höstfrost
+            <input type="date" bind:value={garden.forstaHostfrostDatum} />
+          </label>
+        </div>
+        <small class="frosthjalp">
+          Säsongen blir {sasongslangd} dagar lång. Datumen är uppskattade ur ortens
+          latitud – justera dem gärna, ett frosthål eller ett kustnära läge kan skilja
+          flera veckor från grannbyn.
+        </small>
       </div>
 
       <div class="kompassfalt">
@@ -240,7 +261,9 @@
          skalas hela vyn om och man tappar bort sig. -->
     <span class="fast">{garden.widthCm / 100} × {garden.heightCm / 100} m</span>
     <span class="fast">📍 {garden.platsNamn}</span>
-    <span class="fast">❄ {garden.sistaFrostDatum}</span>
+    <span class="fast" title="Sista vårfrost → första höstfrost">
+      ❄ {garden.sistaFrostDatum} → {garden.forstaHostfrostDatum}
+    </span>
     <button class="installningar" on:click={() => visaInstallningar = true}>⚙ Ändra</button>
   </div>
 </header>
@@ -317,8 +340,9 @@
     </p>
   </aside>
   <div class="mitten">
-    {#if garden.visaSkugga}
-      <div class="solrad">
+    <!-- Tidpunkten styr både skuggorna och vilka rader som står i jorden,
+         så raden visas alltid – annars vet man inte varför en rad är överstruken. -->
+    <div class="solrad">
         <!-- Orten sätts vid uppstart och ändras via inställningarna. -->
         <button class="oversyn" on:click={() => visaSkuggoversyn = true}>🔎 Skuggöversyn</button>
 
@@ -344,7 +368,7 @@
           <span class="klocka">{String(garden.solTimme).padStart(2, "0")}:00</span>
         </label>
 
-        {#if sol}
+        {#if sol && garden.visaSkugga}
           <span class="solinfo">
             {#if !sol.uppe || sol.hojdGrader <= MIN_SOLHOJD}
               Solen står för lågt – ingen meningsfull skugga
@@ -358,7 +382,6 @@
           </span>
         {/if}
       </div>
-    {/if}
     <GardenCanvas bind:this={canvas} {garden} {panLage} onchange={onCanvasChange}
                   onselect={(s) => selection = s} />
   </div>
@@ -740,6 +763,9 @@
     border: 1px solid #d8d2c4; border-radius: 6px; padding: 7px 9px; font-size: 0.9rem;
   }
   .matt { display: flex; align-items: center; gap: 8px; }
+  .frostpar { display: flex; gap: 12px; }
+  .frostpar label { flex: 1; }
+  .frosthjalp { font-size: 0.74rem; color: #8a8371; line-height: 1.45; }
   .matt input { width: 90px; }
   .kompassfalt {
     display: flex; gap: 16px; align-items: flex-start;

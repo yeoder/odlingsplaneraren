@@ -9,7 +9,8 @@ export interface Garden {
   showLabels: boolean; // visa namnskyltar vid varje rad
   plantHeights: Record<string, number>; // användarens höjdjusteringar per växt (cm)
   uppsatt: boolean;        // grunduppgifterna ifyllda — annars visas startsidan
-  sistaFrostDatum: string; // ISO-datum, utgångspunkt för hela årsschemat
+  sistaFrostDatum: string;   // ISO-datum, utgångspunkt för hela årsschemat
+  forstaHostfrostDatum: string; // ISO-datum, sätter säsongens slut
   platsNamn: string;       // ort, ger latitud för solberäkningen
   visaSkugga: boolean;
   solSasong: string;       // id ur SASONGER
@@ -49,7 +50,8 @@ export interface PlantRow {
 export function newGarden(): Garden {
   return {
     widthCm: 800, heightCm: 500, sunDirectionDeg: 0, locked: false,
-    showLabels: false, plantHeights: {}, uppsatt: false, sistaFrostDatum: "2026-05-15",
+    showLabels: false, plantHeights: {}, uppsatt: false,
+    sistaFrostDatum: "2026-05-15", forstaHostfrostDatum: "2026-10-10",
     platsNamn: "Stockholm", visaSkugga: false, solSasong: "midsommar", solTimme: 8,
     boxes: [], rows: [],
   };

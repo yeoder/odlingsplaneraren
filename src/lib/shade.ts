@@ -88,6 +88,7 @@ function skuggadAndel(traffad: Rect, kastare: Kastare[]): number {
 export function skuggAnalys(garden: Garden): SkuggPost[] {
   const plats = platsByNamn(garden.platsNamn);
   const frost = garden.sistaFrostDatum || "2026-05-15";
+  const hostfrost = garden.forstaHostfrostDatum;
   const resultat = new Map<number, SkuggPost>();
 
   for (const sasong of SASONGER) {
@@ -97,7 +98,7 @@ export function skuggAnalys(garden: Garden): SkuggPost[] {
     // rader som står i jorden just den här säsongen
     const aktiva = garden.rows
       .map(r => ({ row: r, plant: plantById[r.plantId] }))
-      .filter(x => x.plant && staarIJord(x.plant, frost, datum));
+      .filter(x => x.plant && staarIJord(x.plant, frost, datum, hostfrost));
     if (aktiva.length === 0) continue;
 
     // per rad: viktad ljusförlust och soltimmar under dygnet

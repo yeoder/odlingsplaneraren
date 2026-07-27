@@ -365,7 +365,18 @@
       const g = new Konva.Group({
         x: r.x, y: r.y, draggable: placing === null && placingRow === null && !panLage,
       });
+      // Rader som inte står i jorden vid den valda tidpunkten tonas ned och stryks
+      // över — de är sådda men inte uppe än, eller skördade och bortstädade.
+      const { datum, frost, hostfrost } = aktuellSol();
+      const iJord = staarIJord(plant, frost, datum, hostfrost);
       drawRowShape(g, row);
+      if (!iJord) {
+        g.opacity(0.32);
+        const s = stage.scaleX();
+        const streck = { stroke: "#5f5a4b", strokeWidth: 1.5 / s, listening: false };
+        g.add(new Konva.Line({ points: [0, 0, r.w, r.h], ...streck }));
+        g.add(new Konva.Line({ points: [0, r.h, r.w, 0], ...streck }));
+      }
       if (garden.showLabels) drawRowLabel(g, row);
 
       if (selectedRowId === row.id) {
@@ -381,7 +392,9 @@
       const title = {
         namn: `${plant.symbol} ${row.count} × ${plant.namn}`,
         rad1: `${faktisktCm} cm i raden (rek. ${plant.avstand_i_rad_cm}) · ${plant.radavstand_cm} cm mellan rader`,
-        rad2: `Höjd ${plantHeight(garden, plant.id, plant.hojd_cm)} cm`,
+        rad2: iJord
+          ? `Höjd ${plantHeight(garden, plant.id, plant.hojd_cm)} cm`
+          : `Står inte i jorden vid vald tidpunkt`,
         status: row.compression < 0.999
           ? `⚠ ${Math.round((1 - row.compression) * 100)} % trängre än rekommenderat`
           : row.compression > 1.001
@@ -549,7 +562,7 @@
     const frost = garden.sistaFrostDatum || "2026-05-15";
     const datum = sasongensDatum(frost, sasong.manad, sasong.dag);
     const sol = solPosition(plats, datum.getFullYear(), sasong.manad, sasong.dag, garden.solTimme);
-    return { plats, sasong, sol, datum, frost };
+    return { plats, sasong, sol, datum, frost, hostfrost: garden.forstaHostfrostDatum };
   }
 
   function konvexHolje(punkter: { x: number; y: number }[]): number[] {
@@ -573,7 +586,7 @@
     shadowLayer.destroyChildren();
     if (!garden.visaSkugga) { shadowLayer.batchDraw(); return; }
 
-    const { sol, datum, frost } = aktuellSol();
+    const { sol, datum, frost, hostfrost } = aktuellSol();
     if (!sol.uppe || sol.hojdGrader <= MIN_SOLHOJD) { shadowLayer.batchDraw(); return; }
 
     const az = skuggAzimut(sol.azimutGrader);
@@ -581,7 +594,7 @@
       const plant = plantById[row.plantId];
       // Växten kastar bara skugga när den faktiskt står i jorden vid det valda
       // datumet, och med den höjd den hunnit få då — inte sin fullvuxna höjd.
-      if (!plant || !staarIJord(plant, frost, datum)) continue;
+      if (!plant || !staarIJord(plant, frost, datum, hostfrost)) continue;
       const hojd = hojdVidDatum(plant, plantHeight(garden, plant.id, plant.hojd_cm), frost, datum);
       const langd = skuggLangdCm(hojd, sol.hojdGrader);
       if (langd < 5) continue;
