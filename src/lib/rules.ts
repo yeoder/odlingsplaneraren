@@ -1,7 +1,13 @@
 // Regelmotor — rena funktioner av trädgårdens data, inga sidoeffekter.
-// Just nu: trängselvarningar. Kompanjon-, fukt- och skuggregler kommer i M3/M4.
-import { MIN_COMPRESSION, rowComp, type Garden } from "./model";
+// Trängsel- och skuggvarningar. Kompanjon- och fuktregler kommer i M3.
+import {
+  MIN_COMPRESSION, rowComp, rowRect, rectInside, rectsOverlap, plantHeight,
+  type Garden, type Rect,
+} from "./model";
 import { plantById } from "./plants";
+import {
+  solPosition, skuggLangdCm, skuggAzimut, skuggOffset, platsByNamn, SASONGER, MIN_SOLHOJD,
+} from "./sun";
 
 export interface Warning {
   id: string;
@@ -26,6 +32,21 @@ export function computeWarnings(garden: Garden): Warning[] {
 
     const faktisktCm = formatCm(Math.round(plant.avstand_i_rad_cm * row.compression * 10) / 10);
     const rekCm = formatCm(plant.avstand_i_rad_cm);
+
+    // Raden ligger utanför sin ruta — kan hända om växtdatan ändrats sedan odlingen
+    // sparades och raden inte gick att passa in automatiskt vid inläsning.
+    const box = garden.boxes.find(b => b.id === row.boxId);
+    if (box && !rectInside(rowRect(row, plant), { x: box.x, y: box.y, w: box.w, h: box.h })) {
+      out.push({
+        id: `utanfor-${row.id}`,
+        niva: "varning",
+        rubrik: `${row.count} × ${plant.namn} ligger utanför odlingsrutan`,
+        text: `Raden får inte plats i sin ruta med nuvarande avstånd ` +
+          `(${plant.avstand_i_rad_cm}×${plant.radavstand_cm} cm). ` +
+          `Minska antalet, gör raden smalare eller flytta den till en större ruta.`,
+        rowId: row.id,
+      });
+    }
 
     if (row.compression < 0.999) {
       const procentTrangre = Math.round((1 - row.compression) * 100);
@@ -71,7 +92,68 @@ export function computeWarnings(garden: Garden): Warning[] {
     }
   }
 
+  out.push(...skuggVarningar(garden));
   return out;
+}
+
+// Skuggvarningar: en hög rad som skuggar en lägre solälskande rad.
+// FÖRENKLING: skuggan approximeras med sitt omslutande rektangelområde, och bara
+// växternas egna skuggor räknas — hus, staket och träd finns inte i modellen.
+function skuggVarningar(garden: Garden): Warning[] {
+  const ut: Warning[] = [];
+  if (!garden.visaSkugga) return ut;
+
+  const plats = platsByNamn(garden.platsNamn);
+  const sasong = SASONGER.find(s => s.id === garden.solSasong) ?? SASONGER[1];
+  const ar = new Date(garden.sistaFrostDatum || "2026-05-15").getFullYear();
+  const sol = solPosition(plats, ar, sasong.manad, sasong.dag, garden.solTimme);
+  if (!sol.uppe || sol.hojdGrader <= MIN_SOLHOJD) return ut;
+
+  const az = skuggAzimut(sol.azimutGrader);
+  const tid = `${sasong.namn.toLowerCase()} kl ${String(garden.solTimme).padStart(2, "0")}`;
+
+  for (const kastare of garden.rows) {
+    const pk = plantById[kastare.plantId];
+    if (!pk) continue;
+    const hojdK = plantHeight(garden, pk.id, pk.hojd_cm);
+    const langd = skuggLangdCm(hojdK, sol.hojdGrader);
+    if (langd < 10) continue;
+
+    const rk = rowRect(kastare, pk);
+    const { dx, dy } = skuggOffset(langd, az, garden.sunDirectionDeg);
+    const skugga: Rect = {
+      x: Math.min(rk.x, rk.x + dx),
+      y: Math.min(rk.y, rk.y + dy),
+      w: rk.w + Math.abs(dx),
+      h: rk.h + Math.abs(dy),
+    };
+
+    for (const traffad of garden.rows) {
+      if (traffad.id === kastare.id) continue;
+      const pt = plantById[traffad.plantId];
+      if (!pt) continue;
+      const hojdT = plantHeight(garden, pt.id, pt.hojd_cm);
+      if (hojdT >= hojdK * 0.8) continue; // ungefär lika hög — skuggar inte nämnvärt
+      if (!rectsOverlap(skugga, rowRect(traffad, pt))) continue;
+
+      const solalskare = pt.solbehov === "sol";
+      ut.push({
+        id: `skugga-${kastare.id}-${traffad.id}`,
+        niva: solalskare ? "varning" : "info",
+        rubrik: solalskare
+          ? `${pt.namn} skuggas av ${pk.namn}`
+          : `${pt.namn} står i skugga av ${pk.namn}`,
+        text: solalskare
+          ? `${pk.namn} (${hojdK} cm) kastar ${Math.round(langd)} cm skugga ${tid} och ` +
+            `täcker ${pt.namn}, som vill ha full sol. Flytta den lägre raden till ` +
+            `solsidan eller byt plats på raderna.`
+          : `${pk.namn} (${hojdK} cm) skuggar ${pt.namn} ${tid} – men ${pt.namn} ` +
+            `trivs i ${pt.solbehov}, så det är snarare en fördel.`,
+        rowId: traffad.id,
+      });
+    }
+  }
+  return ut;
 }
 
 export const TRANGT_GRANS_TEXT =

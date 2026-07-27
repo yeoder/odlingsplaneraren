@@ -1,9 +1,11 @@
 <script lang="ts">
+  import { onMount } from "svelte";
   import GardenCanvas from "./lib/GardenCanvas.svelte";
   import { loadGarden, saveGarden, snap, plantHeight } from "./lib/model";
   import { PLANTS, plantById, plantsPerM2, type Plant } from "./lib/plants";
   import { computeWarnings, type Warning } from "./lib/rules";
   import { computeSchedule, formateraDatum, ATGARD_RUBRIK, type Vecka, type Atgard } from "./lib/schedule";
+  import { PLATSER, SASONGER, TIDER, MIN_SOLHOJD } from "./lib/sun";
 
   // let (inte const): omtilldelas efter mutationer så Svelte uppdaterar vyn
   let garden = loadGarden();
@@ -23,6 +25,21 @@
     saveGarden(garden);
     schema = computeSchedule(garden);
   }
+
+  // --- sol & skugga ---
+  let sol: { hojdGrader: number; azimutGrader: number; uppe: boolean } | null = null;
+  function solChanged() {
+    garden = garden;
+    saveGarden(garden);
+    canvas?.redraw();
+    sol = canvas?.aktuellSol().sol ?? null;
+  }
+  function toggleSkugga() {
+    garden.visaSkugga = !garden.visaSkugga;
+    solChanged();
+  }
+
+  onMount(() => { sol = canvas?.aktuellSol().sol ?? null; });
 
   // minimerade varningar (id → hopfälld)
   let collapsed: Record<string, boolean> = {};
@@ -82,8 +99,8 @@
   }
 
   function onCanvasChange() {
-    // avmarkera växtknappen när placeringen avslutas via Esc/Klar
-    if (!canvas.isPlacingRow()) selectedPlantId = null;
+    // canvas kan saknas om komponenten hinner rapportera innan bindningen satts
+    if (canvas && !canvas.isPlacingRow()) selectedPlantId = null;
     refreshWarnings();
   }
 
@@ -161,6 +178,7 @@
   </button>
   <button on:click={() => canvas.deleteSelection()} disabled={!selection}>🗑 Ta bort</button>
   <button class:on={garden.showLabels} on:click={toggleLabels}>🏷 Namnskyltar</button>
+  <button class:on={garden.visaSkugga} on:click={toggleSkugga}>☀️ Skuggor</button>
 
   <span class="hint">
     {#if !selection}
@@ -206,8 +224,53 @@
       Välj växt → klicka i en odlingsruta. <b>R</b> roterar innan placering.
     </p>
   </aside>
-  <GardenCanvas bind:this={canvas} {garden} onchange={onCanvasChange}
-                onselect={(s) => selection = s} />
+  <div class="mitten">
+    {#if garden.visaSkugga}
+      <div class="solrad">
+        <label>📍 <select bind:value={garden.platsNamn} on:change={solChanged}>
+          {#each PLATSER as p}<option value={p.namn}>{p.namn}</option>{/each}
+        </select></label>
+
+        <span class="grupp">
+          {#each SASONGER as s}
+            <button class:on={garden.solSasong === s.id}
+                    on:click={() => { garden.solSasong = s.id; solChanged(); }}>{s.namn}</button>
+          {/each}
+        </span>
+
+        <span class="grupp">
+          {#each TIDER as t}
+            <button class:on={garden.solTimme === t.timme}
+                    on:click={() => { garden.solTimme = t.timme; solChanged(); }}>
+              {t.namn} {t.timme}
+            </button>
+          {/each}
+        </span>
+
+        <label class="skjut">
+          <input type="range" min="4" max="22" step="1"
+                 bind:value={garden.solTimme} on:input={solChanged} />
+          <span class="klocka">{String(garden.solTimme).padStart(2, "0")}:00</span>
+        </label>
+
+        {#if sol}
+          <span class="solinfo">
+            {#if !sol.uppe || sol.hojdGrader <= MIN_SOLHOJD}
+              Solen står för lågt – ingen meningsfull skugga
+            {:else}
+              Solhöjd {Math.round(sol.hojdGrader)}° · solen i
+              {#if sol.azimutGrader < 67.5}nordost{:else if sol.azimutGrader < 112.5}öster
+              {:else if sol.azimutGrader < 157.5}sydost{:else if sol.azimutGrader < 202.5}söder
+              {:else if sol.azimutGrader < 247.5}sydväst{:else if sol.azimutGrader < 292.5}väster
+              {:else}nordväst{/if}
+            {/if}
+          </span>
+        {/if}
+      </div>
+    {/if}
+    <GardenCanvas bind:this={canvas} {garden} onchange={onCanvasChange}
+                  onselect={(s) => selection = s} />
+  </div>
 
   {#if warnings.length}
     <section class="warnpanel">
@@ -386,6 +449,26 @@
   .hint { color: #8a8371; font-size: 0.75rem; }
 
   main { flex: 1; padding: 12px; min-height: 0; display: flex; gap: 12px; }
+  .mitten { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+  .solrad {
+    flex: none; display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    background: #fff; border: 1px solid #d8d2c4; border-radius: 8px;
+    padding: 7px 10px; font-size: 0.8rem;
+  }
+  .solrad select {
+    border: 1px solid #d8d2c4; border-radius: 5px; padding: 4px 6px; font-size: 0.8rem;
+  }
+  .grupp { display: flex; gap: 4px; }
+  .solrad button {
+    border: 1px solid #d8d2c4; border-radius: 6px; background: #faf8f3;
+    padding: 4px 10px; cursor: pointer; font-size: 0.78rem;
+  }
+  .solrad button:hover { background: #eaf2e3; }
+  .solrad button.on { background: #e8a33d; color: #fff; border-color: #e8a33d; }
+  .skjut { display: flex; align-items: center; gap: 6px; }
+  .skjut input { width: 110px; }
+  .klocka { font-variant-numeric: tabular-nums; color: #6d6757; }
+  .solinfo { color: #8a6d00; margin-left: auto; }
   aside {
     width: 220px; flex: none; background: #fff; border: 1px solid #d8d2c4;
     border-radius: 8px; padding: 12px; display: flex; flex-direction: column; min-height: 0;

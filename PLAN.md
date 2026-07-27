@@ -81,6 +81,24 @@ Plant       { id, namn, familj, avstand_cm, hojd_cm, vattenbehov, sol, tider...,
 - **M3 — Regelmotor:** kompanjoner, fukt per box, varningspanel kopplad till ritytan.
 - **M4 — Sol & skugga:** riktning, höjder, skuggzoner morgon/middag/kväll.
 - **M5 — Årsschema & finputs:** kalender, export/import av trädgårdsfil, ångra/gör om, PWA (offline + installerbar).
+- **M6 — Startsida & återfinning:** "Starta odlingen" med egen id, och ett sätt att hitta
+  tillbaka till sin odling om webbläsarens data rensas. Se avsnittet nedan.
+
+## Startsida och att hitta tillbaka till sin odling (M6, sist)
+Varje användares odling lever redan isolerat: allt sparas i **deras egen webbläsare**
+(localStorage), så två användare kan aldrig påverka varandras höjdjusteringar eller rutnamn.
+Det som saknas är att kunna återfinna sin egen odling efter en rensning eller på en annan enhet.
+
+Två vägar, båda utan server:
+1. **Exportera/importera fil** — enklast och helt utan begränsningar i storlek.
+2. **Delbar länk** — hela odlingen komprimeras och läggs i länkens adress. "Koden" blir
+   alltså själva länken. Fungerar utan konto och utan att något lagras centralt, men
+   begränsas av hur lång en adress får vara (stora odlingar kan bli för stora).
+
+En kort kod av typen "ABC-123" som hämtar odlingen kräver att odlingarna lagras någonstans
+centralt — alltså en server och därmed konton, drift och personuppgiftsansvar. Det ligger
+utanför projektets premiss (ingen server, inga konton) och bör i så fall vara ett medvetet
+eget beslut, inte något som smyger sig in.
 
 ## Idéer värda att ta efter (från odlis.se)
 Odlis är en **guide som genererar en plan åt användaren** (ort → ytor → grödor → färdig plan).

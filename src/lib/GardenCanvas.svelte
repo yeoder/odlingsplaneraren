@@ -8,6 +8,9 @@
   } from "./model";
   import { plantById } from "./plants";
   import { formatCm } from "./rules";
+  import {
+    solPosition, skuggLangdCm, skuggAzimut, skuggOffset, platsByNamn, SASONGER, MIN_SOLHOJD,
+  } from "./sun";
 
   export let garden: Garden;
   export let onchange: () => void = () => {};
@@ -17,6 +20,7 @@
   let stage: Konva.Stage;
   let gridLayer: Konva.Layer;
   let boxLayer: Konva.Layer;
+  let shadowLayer: Konva.Layer;
   let rowLayer: Konva.Layer;
   let ghostLayer: Konva.Layer;
 
@@ -34,6 +38,40 @@
 
   // hovertext som följer muspekaren
   let hover = { visible: false, x: 0, y: 0, namn: "", rad1: "", rad2: "", status: "" };
+
+  // --- kompass: definierar vilket håll som är norr på planen ---
+  // Samma vinkel används av skuggberäkningen, så bild och sol kan aldrig glida isär.
+  let kompassEl: HTMLDivElement;
+  let vrider = false;
+
+  function vridTill(e: PointerEvent) {
+    const r = kompassEl.getBoundingClientRect();
+    const mx = r.left + r.width / 2, my = r.top + r.height / 2;
+    // 0° = norr uppåt i bilden, växande medurs
+    const vinkel = (Math.atan2(e.clientX - mx, my - e.clientY) * 180) / Math.PI;
+    garden.sunDirectionDeg = Math.round(((vinkel % 360) + 360) % 360);
+    garden = garden;
+    renderShadows();
+    commit();
+  }
+  function kompassNed(e: PointerEvent) {
+    vrider = true;
+    kompassEl.setPointerCapture(e.pointerId);
+    vridTill(e);
+  }
+  function kompassRor(e: PointerEvent) { if (vrider) vridTill(e); }
+  function kompassUpp(e: PointerEvent) {
+    vrider = false;
+    kompassEl.releasePointerCapture?.(e.pointerId);
+  }
+  function nollstallKompass() {
+    garden.sunDirectionDeg = 0;
+    garden = garden;
+    renderShadows();
+    commit();
+  }
+
+  $: solAzimut = garden.visaSkugga ? aktuellSol().sol : null;
 
   // Egen inmatningsdialog. window.prompt() finns inte i alla miljöer (kastar
   // "prompt() is not supported"), så namngivning och antal görs i appen i stället.
@@ -529,9 +567,68 @@
     boxLayer.batchDraw();
   }
 
+  // --- skuggor (M4) ---
+  // Skuggan ritas som ett svep: radens fotavtryck plus samma rektangel förskjuten
+  // åt skuggans håll, sammanbundna till ett hölje.
+  export function aktuellSol() {
+    const plats = platsByNamn(garden.platsNamn);
+    const sasong = SASONGER.find(s => s.id === garden.solSasong) ?? SASONGER[1];
+    const ar = new Date(garden.sistaFrostDatum || "2026-05-15").getFullYear();
+    const sol = solPosition(plats, ar, sasong.manad, sasong.dag, garden.solTimme);
+    return { plats, sasong, sol };
+  }
+
+  function konvexHolje(punkter: { x: number; y: number }[]): number[] {
+    const p = [...punkter].sort((a, b) => a.x - b.x || a.y - b.y);
+    const kryss = (o: any, a: any, b: any) =>
+      (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
+    const bygg = (pts: typeof p) => {
+      const ut: typeof p = [];
+      for (const pt of pts) {
+        while (ut.length >= 2 && kryss(ut[ut.length - 2], ut[ut.length - 1], pt) <= 0) ut.pop();
+        ut.push(pt);
+      }
+      ut.pop();
+      return ut;
+    };
+    const holje = [...bygg(p), ...bygg([...p].reverse())];
+    return holje.flatMap(pt => [pt.x, pt.y]);
+  }
+
+  function renderShadows() {
+    shadowLayer.destroyChildren();
+    if (!garden.visaSkugga) { shadowLayer.batchDraw(); return; }
+
+    const { sol } = aktuellSol();
+    if (!sol.uppe || sol.hojdGrader <= MIN_SOLHOJD) { shadowLayer.batchDraw(); return; }
+
+    const az = skuggAzimut(sol.azimutGrader);
+    for (const row of garden.rows) {
+      const plant = plantById[row.plantId];
+      if (!plant) continue;
+      const hojd = plantHeight(garden, plant.id, plant.hojd_cm);
+      const langd = skuggLangdCm(hojd, sol.hojdGrader);
+      if (langd < 5) continue;
+      const { dx, dy } = skuggOffset(langd, az, garden.sunDirectionDeg);
+
+      const r = rowRect(row, plant);
+      const horn = [
+        { x: r.x, y: r.y }, { x: r.x + r.w, y: r.y },
+        { x: r.x + r.w, y: r.y + r.h }, { x: r.x, y: r.y + r.h },
+      ];
+      const alla = [...horn, ...horn.map(h => ({ x: h.x + dx, y: h.y + dy }))];
+      shadowLayer.add(new Konva.Line({
+        points: konvexHolje(alla),
+        closed: true, fill: "#2b3a1a", opacity: 0.22, listening: false,
+      }));
+    }
+    shadowLayer.batchDraw();
+  }
+
   function renderAll() {
     renderBoxes();
     renderRows();
+    renderShadows();
     onselect(getSelection());
   }
 
@@ -793,6 +890,38 @@
     renderAll();
   }
 
+  // Växtdatan justeras löpande (avstånden har t.ex. höjts till standardvärden).
+  // En sparad odling kan därför innehålla rader som numera är för stora för sin ruta.
+  // Passa in dem igen vid inläsning så inget ritas utanför rutan.
+  function normalizeRows() {
+    let andrat = false;
+    for (const row of garden.rows) {
+      const box = garden.boxes.find(b => b.id === row.boxId);
+      if (!box) continue;
+      const r = rowRect(row, plantById[row.plantId]);
+      if (rectInside(r, boxRect(box))) continue;
+
+      // först: behåll antalet, låt fitRow krympa avstånd/radavstånd och flytta in raden
+      let fitted = fitRow(row.plantId, row.count, row.rotationDeg, row.x, row.y, box, row.id,
+                          row.compression, rowComp(row));
+      // annars: prova rotera 90°, ibland får raden plats på tvären
+      if (!fitted) {
+        fitted = fitRow(row.plantId, row.count, (row.rotationDeg + 90) % 180, row.x, row.y,
+                        box, row.id, row.compression, rowComp(row));
+      }
+      if (fitted) {
+        row.x = fitted.x; row.y = fitted.y; row.rotationDeg = fitted.rotationDeg;
+        row.compression = fitted.compression; row.rowCompression = fitted.rowCompression;
+        andrat = true;
+      }
+      // Får raden ändå inte plats lämnas den orörd — regelmotorn flaggar den
+      // så användaren själv kan minska antalet eller flytta den.
+    }
+    // saveGarden, inte commit(): körs under onMount innan förälderns
+    // komponentbindning finns, så onchange får inte anropas här.
+    if (andrat) saveGarden(garden);
+  }
+
   onMount(() => {
     nextId = [...garden.boxes, ...garden.rows].reduce((m, o) => Math.max(m, o.id), 0) + 1;
 
@@ -804,9 +933,10 @@
     });
     gridLayer = new Konva.Layer({ listening: false });
     boxLayer = new Konva.Layer();
+    shadowLayer = new Konva.Layer({ listening: false });
     rowLayer = new Konva.Layer();
     ghostLayer = new Konva.Layer({ listening: false });
-    stage.add(gridLayer, boxLayer, rowLayer, ghostLayer);
+    stage.add(gridLayer, boxLayer, shadowLayer, rowLayer, ghostLayer);
 
     stage.on("wheel", (e) => {
       e.evt.preventDefault();
@@ -868,6 +998,7 @@
       else fitToView();
     });
     ro.observe(container);
+    normalizeRows();
     fitToView();
 
     if (import.meta.env.DEV) {
@@ -894,6 +1025,20 @@
 
 <div class="wrap">
   <div class="canvas" bind:this={container}></div>
+
+  <div class="kompass" bind:this={kompassEl}
+       on:pointerdown={kompassNed} on:pointermove={kompassRor} on:pointerup={kompassUpp}
+       on:dblclick={nollstallKompass}
+       title="Dra för att vrida planen så norr stämmer med verkligheten. Dubbelklick nollställer.">
+    <div class="ros" style="transform: rotate({-garden.sunDirectionDeg}deg)">
+      <span class="v n">N</span><span class="v o">Ö</span>
+      <span class="v s">S</span><span class="v va">V</span>
+      <span class="nal"></span>
+    </div>
+    {#if solAzimut?.uppe && solAzimut.hojdGrader > MIN_SOLHOJD}
+      <span class="sol" style="transform: rotate({solAzimut.azimutGrader - garden.sunDirectionDeg}deg)">☀️</span>
+    {/if}
+  </div>
 
   {#if placing}
     <div class="placebar">
@@ -969,6 +1114,35 @@
   .placebar button {
     border: none; border-radius: 12px; padding: 3px 12px; cursor: pointer;
     background: #fff; color: #2e5d1e; font-weight: 600;
+  }
+  .kompass {
+    position: absolute; top: 10px; right: 10px; z-index: 15;
+    width: 74px; height: 74px; border-radius: 50%;
+    background: #fffffff2; border: 1px solid #d8d2c4; box-shadow: 0 2px 8px #0002;
+    cursor: grab; touch-action: none; user-select: none;
+  }
+  .kompass:active { cursor: grabbing; }
+  .ros { position: absolute; inset: 0; }
+  .ros .v {
+    position: absolute; font-size: 0.66rem; font-weight: 700; color: #8a8371;
+    left: 50%; top: 50%; transform-origin: center;
+  }
+  .ros .n  { transform: translate(-50%, -50%) translateY(-27px); color: #b3402a; }
+  .ros .s  { transform: translate(-50%, -50%) translateY(27px); }
+  .ros .o  { transform: translate(-50%, -50%) translateX(27px); }
+  .ros .va { transform: translate(-50%, -50%) translateX(-27px); }
+  .ros .nal {
+    position: absolute; left: 50%; top: 12px; width: 2px; height: 25px;
+    background: linear-gradient(#b3402a 0 60%, #c9c1ae 60% 100%);
+    transform: translateX(-50%); border-radius: 1px;
+  }
+  .kompass .sol {
+    position: absolute; left: 50%; top: 50%; font-size: 0.8rem;
+    width: 0; height: 0; display: grid; place-items: center;
+    transform-origin: center;
+  }
+  .kompass .sol::before {
+    content: "☀️"; position: absolute; transform: translateY(-30px);
   }
   .tooltip {
     position: absolute; z-index: 20; pointer-events: none;
