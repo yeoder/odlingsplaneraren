@@ -78,7 +78,57 @@ Plant       { id, namn, familj, avstand_cm, hojd_cm, vattenbehov, sol, tider...,
 - **M0 — Projektskelett:** Svelte + Vite + Konva igång, rityta med 5 cm-grid. Publikt repo på GitHub + Pages-deploy (appen ligger live från dag 1).
 - **M1 — Boxar:** placera/flytta/duplicera (högerklick)/rotera boxar och gångar, snap, ingen overlap, spara/ladda fil.
 - **M2 — Plantrader:** drag & drop av rader med rätt mått, rotation, komprimering 80–100 % med varning, avstånd mot boxkant/andra rader.
-- **M3 — Regelmotor:** kompanjoner, fukt per box, varningspanel kopplad till ritytan.
+- **M3 — Regelmotor:** kompanjoner och fukt per box. Se detaljplanen nedan.
+
+## M3 i detalj — fukt och kompanjoner
+
+### Fuktkvot per odlingsruta (härledd, aldrig inställd)
+Rutan har medvetet ingen egen fuktinställning. Det är **växterna som står i rutan som
+avgör** hur fuktig den bör hållas. Varje växt har redan `vattenbehov` (låg/medel/hög).
+
+Beräkning i `rules.ts`:
+1. Samla `vattenbehov` för alla rader som står i rutan **samtidigt** (använd `staarIJord`
+   — en rädisa som är skördad i maj ska inte styra bevattningen i augusti).
+2. Vikta efter hur stor yta varje rad upptar, inte antal rader: en enda pumpa som täcker
+   halva rutan väger tyngre än tre korta kryddrader.
+3. Rutans rekommendation = det viktade läget, visas som en etikett på rutan
+   ("Håll fuktig" / "Lagom" / "Låt torka upp mellan vattningar").
+4. **Varning vid spridning:** finns både `låg` och `hög` i samma ruta går de inte att
+   vattna rätt samtidigt — den ena ruttnar eller den andra torkar. Skillnaden `medel`
+   mot `låg`/`hög` är en notering, inte en varning.
+
+Exempel som ska falla ut: lök (låg) tillsammans med sallat (hög) i samma ruta ⇒ varning.
+Lök tillsammans med morot (medel) ⇒ tyst.
+
+### Kompanjoner — bra och dåliga grannar
+Data finns redan (`bra_grannar` / `daliga_grannar`), men **saknar orsak**. Utan orsak kan
+varningen bara säga "dåliga grannar", vilket inte hjälper någon att bedöma hur allvarligt
+det är. Utöka därför datamodellen:
+
+```ts
+daliga_grannar: [{ id: "potatis", orsak: "sjukdom" }, ...]
+```
+Orsakstyper och hur långt de når:
+| Orsak | Räckvidd | Exempel |
+|---|---|---|
+| `vatten` | samma ruta | lök + sallat |
+| `sjukdom` | samma ruta **och** angränsande rutor | tomat + potatis (bladmögel) |
+| `skadedjur` | samma ruta och angränsande | morot + dill (morotsfluga) |
+| `konkurrens` | samma ruta | fänkål hämmar det mesta kemiskt |
+| `rot` | samma ruta | grovrotade som stör rotfrukter |
+
+Bra grannar ger en grön notering, inte en varning. Räckvidd "angränsande" definieras som
+rutor vars kanter ligger inom ~50 cm från varandra.
+
+### Uppdelning i koden
+- `rules.ts` får `fuktVarningar(garden)` och `kompanjonVarningar(garden)`, båda rena
+  funktioner precis som `skuggVarningar`.
+- Rutans fuktetikett ritas i `GardenCanvas` när layouten är låst (som namnskyltarna).
+- Allt hamnar i den befintliga varningspanelen med samma minimeringsbeteende.
+
+### Medvetet utanför M3
+Växtföljd mellan år (samma familj på samma plats två år i rad) kräver att odlingen sparas
+per säsong — det hör hemma efter M5/M6 när flera odlingar kan finnas sparade.
 - **M4 — Sol & skugga:** riktning, höjder, skuggzoner morgon/middag/kväll.
 - **M5 — Årsschema & finputs:** kalender, export/import av trädgårdsfil, ångra/gör om, PWA (offline + installerbar).
 - **M6 — Startsida & återfinning:** "Starta odlingen" med egen id, och ett sätt att hitta
