@@ -17,6 +17,7 @@
   export let garden: Garden;
   export let onchange: () => void = () => {};
   export let onselect: (sel: { kind: "box" | "row"; id: number } | null) => void = () => {};
+  export let onplacing: (placerar: boolean) => void = () => {};
 
   let container: HTMLDivElement;
   let stage: Konva.Stage;
@@ -70,6 +71,7 @@
     if (!stage) return;
     const isPlacing = placing !== null || placingRow !== null;
     stage.draggable(!isPlacing);
+    onplacing(isPlacing);
     renderAll();
   }
 
@@ -78,14 +80,43 @@
   export function startPlacing(typ: "odling" | "gang", wCm: number, hCm: number) {
     cancelPlacing();
     placing = { typ, w: snap(wCm), h: snap(hCm) };
+    // Markeringen måste bort: annars roterar Rotera-knappen den gamla rutan
+    // i stället för den man håller på att placera.
+    selectedBoxId = null; selectedRowId = null;
     menu.visible = false;
     syncInteractionMode();
   }
   export function startPlacingRow(plantId: string, count: number) {
     cancelPlacing();
     placingRow = { plantId, count: Math.max(1, Math.round(count)), rotationDeg: 0 };
+    selectedBoxId = null; selectedRowId = null;
     menu.visible = false;
     syncInteractionMode();
+  }
+
+  export function isPlacing(): boolean { return placing !== null || placingRow !== null; }
+
+  /** Ändra måtten på den ruta som just nu hänger i muspekaren. */
+  export function updatePlacingSize(wCm: number, hCm: number) {
+    if (!placing) return;
+    placing = { ...placing, w: snap(wCm), h: snap(hCm) };
+    moveGhost();
+  }
+
+  /** Ändra antalet plantor i den rad som just nu hänger i muspekaren. */
+  export function updatePlacingCount(count: number) {
+    if (!placingRow) return;
+    placingRow = { ...placingRow, count: Math.max(1, Math.round(count)) };
+    moveGhost();
+  }
+
+  /** Rotera det som håller på att placeras (rutan byter mått, raden vrids 90°). */
+  export function rotatePlacing() {
+    if (placing) placing = { ...placing, w: placing.h, h: placing.w };
+    else if (placingRow) {
+      placingRow = { ...placingRow, rotationDeg: (placingRow.rotationDeg + 90) % 180 };
+    } else return;
+    moveGhost();
   }
   export function cancelPlacing() {
     placing = null;
@@ -976,9 +1007,9 @@
 
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") { cancelPlacing(); menu.visible = false; }
-      if (e.key.toLowerCase() === "r" && placingRow) {
-        placingRow.rotationDeg = (placingRow.rotationDeg + 90) % 180;
-        moveGhost();
+      // R roterar både rutor och rader som håller på att placeras
+      if (e.key.toLowerCase() === "r" && !(e.target instanceof HTMLInputElement)) {
+        rotatePlacing();
       }
       if ((e.key === "Delete" || e.key === "Backspace") && !(e.target instanceof HTMLInputElement)) {
         if (selectedRowId !== null) {
@@ -1031,6 +1062,23 @@
 
 <div class="wrap">
   <div class="canvas" bind:this={container}></div>
+
+  {#if placing}
+    <div class="placebar">
+      Placerar {placing.typ === "gang" ? "gång" : "odlingsruta"} {placing.w / 100}×{placing.h / 100} m —
+      klicka för att placera · <b>R</b> roterar · <b>Esc</b> avslutar
+      <button on:click={cancelPlacing}>Klar</button>
+    </div>
+  {/if}
+  {#if placingRow}
+    <div class="placebar">
+      Planterar {placingRow.count} × {plantById[placingRow.plantId].namn}
+      ({plantById[placingRow.plantId].avstand_i_rad_cm} cm i raden,
+       {plantById[placingRow.plantId].radavstand_cm} cm radavstånd) —
+      klicka i en odlingsruta · <b>R</b> roterar · <b>Esc</b> avslutar
+      <button on:click={cancelPlacing}>Klar</button>
+    </div>
+  {/if}
 
   {#if hover.visible && !placing && !placingRow}
     <div class="tooltip" style="left:{hover.x + 14}px; top:{hover.y + 14}px">

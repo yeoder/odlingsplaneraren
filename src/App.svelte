@@ -16,6 +16,7 @@
 
   let warnings: Warning[] = computeWarnings(garden);
   let selection: { kind: "box" | "row"; id: number } | null = null;
+  let placerar = false;
   let schema: Vecka[] = computeSchedule(garden);
   const ATGARDER: Atgard[] = ["forsa", "direktsa", "planteraUt"];
 
@@ -129,9 +130,20 @@
     canvas.startPlacingRow(id, rowCount);
   }
 
+  // Måtten ska ändra den ruta som redan hänger i muspekaren, inte kräva att man
+  // klickar på "Placera" igen. Rotationen behålls.
+  function boxSizeChanged() {
+    canvas?.updatePlacingSize(boxW * 100, boxH * 100);
+  }
   function countChanged() {
     rowCount = Math.max(1, Math.round(rowCount || 1));
-    if (selectedPlantId) canvas.startPlacingRow(selectedPlantId, rowCount);
+    canvas?.updatePlacingCount(rowCount);
+  }
+
+  // Under placering roterar knappen det som placeras — annars den markerade rutan.
+  function rotateClicked() {
+    if (canvas?.isPlacing()) canvas.rotatePlacing();
+    else canvas?.rotateSelection();
   }
 
   let locked = garden.locked;
@@ -272,8 +284,8 @@
 <div class="toolbar">
   {#if !locked}
     <label>Ruta/gång:
-      <input type="number" bind:value={boxW} min="0.2" max="20" step="0.1" /> ×
-      <input type="number" bind:value={boxH} min="0.2" max="20" step="0.1" /> m
+      <input type="number" bind:value={boxW} min="0.2" max="20" step="0.1" on:input={boxSizeChanged} /> ×
+      <input type="number" bind:value={boxH} min="0.2" max="20" step="0.1" on:input={boxSizeChanged} /> m
     </label>
     <button on:click={() => place("odling")}>🟫 Placera odlingsruta</button>
     <button on:click={() => place("gang")}>▨ Placera gång</button>
@@ -284,9 +296,9 @@
 
   <span class="sep"></span>
 
-  <button on:click={() => canvas.rotateSelection()} disabled={!selection}
-          title="Roterar markerad ruta (med sina växter) eller markerad rad">
-    ⟳ Rotera{selection ? selection.kind === "box" ? " rutan" : " raden" : ""}
+  <button on:click={rotateClicked} disabled={!selection && !placerar}
+          title="Roterar det du håller på att placera, annars markerad ruta eller rad">
+    ⟳ Rotera{placerar ? "" : selection ? (selection.kind === "box" ? " rutan" : " raden") : ""}
   </button>
   <button on:click={() => canvas.deleteSelection()} disabled={!selection}>🗑 Ta bort</button>
   <button class:on={garden.showLabels} on:click={toggleLabels}>🏷 Namnskyltar</button>
@@ -313,7 +325,7 @@
       <h2>Växter</h2>
       <input class="search" type="search" placeholder="Sök växt…" bind:value={plantFilter} />
       <label class="countrow">Antal i raden:
-        <input type="number" bind:value={rowCount} min="1" max="200" on:change={countChanged} />
+        <input type="number" bind:value={rowCount} min="1" max="200" on:input={countChanged} />
       </label>
     </div>
     <div class="plantlist">
@@ -384,7 +396,8 @@
         {/if}
       </div>
     <GardenCanvas bind:this={canvas} {garden} {panLage} onchange={onCanvasChange}
-                  onselect={(s) => selection = s} />
+                  onselect={(s) => selection = s}
+                  onplacing={(p) => placerar = p} />
   </div>
 
   <!-- Panelen ligger alltid kvar: dyker den upp och försvinner ändras ritytans
