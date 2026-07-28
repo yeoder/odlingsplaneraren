@@ -97,17 +97,30 @@ export function computeWarnings(garden: Garden): Warning[] {
   return out;
 }
 
+/** "Lök", "Lök och Dill", "Lök, Dill och Timjan" */
+function listaText(namn: string[]): string {
+  if (namn.length <= 1) return namn[0] ?? "";
+  return `${namn.slice(0, -1).join(", ")} och ${namn[namn.length - 1]}`;
+}
+
 // Fukt: rutan kan inte vattnas rätt om både torr- och fuktälskande växter delar den.
 function fuktVarningar(garden: Garden): Warning[] {
-  return fuktKonflikter(garden).map(f => ({
-    id: `fukt-${f.boxId}`,
-    niva: "varning" as const,
-    rubrik: `Rutan kan inte vattnas rätt åt båda hållen`,
-    text: `${f.torra.join(", ")} vill ha det torrt mellan vattningarna medan ` +
-      `${f.blota.join(", ")} vill stå jämnt fuktigt. I samma ruta ${f.sasongNamn.toLowerCase()} ` +
-      `får du välja vilken som ska må bra – den andra ruttnar eller torkar. ` +
-      `Flytta den ena till en egen ruta.`,
-  }));
+  return fuktKonflikter(garden).map(f => {
+    const torra = listaText(f.torra);
+    const blota = listaText(f.blota);
+    return {
+      id: `fukt-${f.boxId}`,
+      niva: "varning" as const,
+      // inte "${torra} och ${blota}": torra kan redan innehålla ett "och"
+      rubrik: `${torra} vill ha det torrare än ${blota}`,
+      // "Vid {säsong}" fungerar för alla fyra namnen. Böjda former som
+      // "försommaren" skulle ge "tidig höstn" för den sista.
+      text: `${torra} vill torka upp mellan vattningarna, medan ${blota} vill stå ` +
+        `jämnt fuktigt. Vid ${f.sasongNamn.toLowerCase()} växer de i samma ruta, och då ` +
+        `går det inte att vattna rätt åt båda: antingen ruttnar den ena eller så torkar ` +
+        `den andra. Flytta den ena till en egen ruta.`,
+    };
+  });
 }
 
 // Kompanjoner: dåliga grannar varnas, bra kombinationer noteras.
