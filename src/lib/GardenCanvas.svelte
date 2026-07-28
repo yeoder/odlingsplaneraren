@@ -877,10 +877,20 @@
     gridLayer.batchDraw();
   }
 
+  // Skalan där hela odlingen precis får plats i rutan. Zoomgränserna räknas ur den,
+  // så de följer med när odlingen eller fönstret ändrar storlek.
+  let passaSkala = 1;
+
+  // Ut: hela odlingen plus marginal, så skuggor utanför kanten syns.
+  // In: dubbelt så stort som helbilden — mer än så tappar man överblicken.
+  const UT_FAKTOR = 0.75;
+  const IN_FAKTOR = 2;
+
   function fitToView() {
     const pad = 24;
     const sw = container.clientWidth, sh = container.clientHeight;
     const s = Math.min((sw - pad * 2) / garden.widthCm, (sh - pad * 2) / garden.heightCm);
+    passaSkala = s;
     stage.scale({ x: s, y: s });
     stage.position({ x: (sw - garden.widthCm * s) / 2, y: (sh - garden.heightCm * s) / 2 });
     drawGrid();
@@ -910,6 +920,16 @@
     if (!sel) return;
     menu = { ...menu, kind: sel.kind, id: sel.id };
     actRotate();
+  }
+
+  /**
+   * En rotationsfunktion för allt: pågår en placering vrids den, annars det
+   * markerade. Både R-tangenten och knappen i verktygsraden går hit, så de
+   * aldrig kan hamna i otakt med varandra.
+   */
+  export function rotateAny() {
+    if (isPlacing()) rotatePlacing();
+    else rotateSelection();
   }
 
   export function deleteSelection() {
@@ -980,7 +1000,7 @@
       const old = stage.scaleX();
       const pointer = stage.getPointerPosition()!;
       const dir = e.evt.deltaY > 0 ? 1 / 1.1 : 1.1;
-      const s = Math.min(Math.max(old * dir, 0.05), 20);
+      const s = Math.min(Math.max(old * dir, passaSkala * UT_FAKTOR), passaSkala * IN_FAKTOR);
       const world = { x: (pointer.x - stage.x()) / old, y: (pointer.y - stage.y()) / old };
       stage.scale({ x: s, y: s });
       stage.position({ x: pointer.x - world.x * s, y: pointer.y - world.y * s });
@@ -1007,9 +1027,9 @@
 
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") { cancelPlacing(); menu.visible = false; }
-      // R roterar både rutor och rader som håller på att placeras
+      // R roterar det som placeras, eller det markerade — samma väg som knappen
       if (e.key.toLowerCase() === "r" && !(e.target instanceof HTMLInputElement)) {
-        rotatePlacing();
+        rotateAny();
       }
       if ((e.key === "Delete" || e.key === "Backspace") && !(e.target instanceof HTMLInputElement)) {
         if (selectedRowId !== null) {

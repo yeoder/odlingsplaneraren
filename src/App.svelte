@@ -142,8 +142,7 @@
 
   // Under placering roterar knappen det som placeras — annars den markerade rutan.
   function rotateClicked() {
-    if (canvas?.isPlacing()) canvas.rotatePlacing();
-    else canvas?.rotateSelection();
+    canvas?.rotateAny();
   }
 
   let locked = garden.locked;
