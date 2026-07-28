@@ -107,6 +107,15 @@ export function overlaps(a: Box, b: Box): boolean {
   return a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
 }
 
+// Ligger rutorna så nära att sjukdomar och skadedjur går emellan? Vatten- och
+// näringsfrågor stannar i sin egen ruta, men bladmögel och morotsfluga bryr sig
+// inte om rutkanter.
+export function angransande(a: Box, b: Box, marginCm = 50): boolean {
+  const dx = Math.max(0, a.x - (b.x + b.w), b.x - (a.x + a.w));
+  const dy = Math.max(0, a.y - (b.y + b.h), b.y - (a.y + a.h));
+  return Math.hypot(dx, dy) <= marginCm;
+}
+
 // Boxen roterad 90° medurs kring sin egen mitt.
 export function rotatedBox(b: Box): Box {
   return {

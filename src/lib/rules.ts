@@ -5,6 +5,8 @@ import {
 } from "./model";
 import { plantById } from "./plants";
 import { skuggAnalys, LJUSFORLUST_NOTERING, LJUSFORLUST_VARNING } from "./shade";
+import { fuktKonflikter } from "./moisture";
+import { grannKonflikter, grannPlus, konfliktText } from "./companions";
 
 export interface Warning {
   id: string;
@@ -89,8 +91,47 @@ export function computeWarnings(garden: Garden): Warning[] {
     }
   }
 
+  out.push(...fuktVarningar(garden));
+  out.push(...kompanjonVarningar(garden));
   out.push(...skuggVarningar(garden));
   return out;
+}
+
+// Fukt: rutan kan inte vattnas rätt om både torr- och fuktälskande växter delar den.
+function fuktVarningar(garden: Garden): Warning[] {
+  return fuktKonflikter(garden).map(f => ({
+    id: `fukt-${f.boxId}`,
+    niva: "varning" as const,
+    rubrik: `Rutan kan inte vattnas rätt åt båda hållen`,
+    text: `${f.torra.join(", ")} vill ha det torrt mellan vattningarna medan ` +
+      `${f.blota.join(", ")} vill stå jämnt fuktigt. I samma ruta ${f.sasongNamn.toLowerCase()} ` +
+      `får du välja vilken som ska må bra – den andra ruttnar eller torkar. ` +
+      `Flytta den ena till en egen ruta.`,
+  }));
+}
+
+// Kompanjoner: dåliga grannar varnas, bra kombinationer noteras.
+function kompanjonVarningar(garden: Garden): Warning[] {
+  const ut: Warning[] = grannKonflikter(garden).map(k => ({
+    id: k.id,
+    niva: (k.sammaRuta ? "varning" : "info") as "varning" | "info",
+    rubrik: k.sammaRuta
+      ? `${k.aNamn} + ${k.bNamn} bör inte stå tillsammans`
+      : `${k.aNamn} och ${k.bNamn} står i grannrutor`,
+    text: konfliktText(k),
+    rowId: k.rowId,
+  }));
+
+  for (const p of grannPlus(garden)) {
+    ut.push({
+      id: p.id,
+      niva: "info",
+      rubrik: `${p.aNamn} + ${p.bNamn} trivs ihop`,
+      text: `Klassisk samplantering – de gynnar varandra i samma ruta.`,
+      rowId: p.rowId,
+    });
+  }
+  return ut;
 }
 
 // Skuggvarningar bygger på hela dygnets ljus, inte på det värsta ögonblicket.

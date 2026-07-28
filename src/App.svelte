@@ -8,6 +8,7 @@
   import { PLATSER, SASONGER, TIDER, MIN_SOLHOJD, platsByNamn } from "./lib/sun";
   import { uppskattadVarfrost, uppskattadHostfrost, sasongslangdDagar } from "./lib/klimat";
   import { skuggAnalys, type SkuggPost } from "./lib/shade";
+  import { ORSAK_TEXT } from "./lib/companions";
 
   // let (inte const): omtilldelas efter mutationer så Svelte uppdaterar vyn
   let garden = loadGarden();
@@ -599,9 +600,13 @@
         <div class="companions">
           <h4 class="bad">👎 Dåliga grannar</h4>
           <div class="tags">
-            {#each infoPlant.daliga_grannar as id}
-              {#if plantById[id]}
-                <button class="tag" on:click={() => infoPlantId = id}>{plantById[id].symbol} {plantById[id].namn}</button>
+            {#each infoPlant.daliga_grannar as d}
+              {#if plantById[d.id]}
+                <button class="tag" on:click={() => infoPlantId = d.id}
+                        title="Undvik: {ORSAK_TEXT[d.orsak]}">
+                  {plantById[d.id].symbol} {plantById[d.id].namn}
+                  <span class="orsak">{d.orsak}</span>
+                </button>
               {/if}
             {/each}
           </div>
@@ -924,4 +929,8 @@
     padding: 4px 10px; font-size: 0.78rem; cursor: pointer;
   }
   .tag:hover { background: #eaf2e3; }
+  .orsak {
+    font-size: 0.66rem; color: #a8836b; background: #f3ece4;
+    border-radius: 8px; padding: 1px 6px; margin-left: 4px;
+  }
 </style>

@@ -30,6 +30,9 @@
 
 import type { Frosttalighet } from "./klimat";
 
+export type GrannOrsak = "vatten" | "sjukdom" | "skadedjur" | "konkurrens" | "rot";
+export interface DaligGranne { id: string; orsak: GrannOrsak }
+
 export type Vattenbehov = "låg" | "medel" | "hög";
 export type Solbehov = "sol" | "halvskugga" | "skugga";
 
@@ -58,7 +61,7 @@ export interface Plant {
   skord_kg_per_m2?: number; // ungefärlig skörd; utelämnas för prydnadsväxter
   beskrivning: string; // kort körtext för infokortet
   bra_grannar: string[];
-  daliga_grannar: string[];
+  daliga_grannar: DaligGranne[];
 }
 
 export const PLANTS: Plant[] = [
@@ -77,7 +80,7 @@ export const PLANTS: Plant[] = [
     skord_kg_per_m2: 8,
     beskrivning: "Odlingens favorit – kräver stöd och regelbunden vattning men belönar med smakrik skörd hela sommaren.",
     bra_grannar: ["basilika", "morot", "ringblomma", "tagetes", "lok", "persilja"],
-    daliga_grannar: ["potatis", "fankal", "majs"],
+    daliga_grannar: [{ id: "potatis", orsak: "sjukdom" }, { id: "fankal", orsak: "konkurrens" }, { id: "majs", orsak: "skadedjur" }],
   },
   {
     id: "paprika", namn: "Paprika", familj: "potatisväxter", farg: "#fb8c00", symbol: "🫑",
@@ -90,7 +93,7 @@ export const PLANTS: Plant[] = [
     skord_kg_per_m2: 3,
     beskrivning: "Vill ha värme och lång säsong – klarar sig bäst i växthus eller varmt, skyddat läge.",
     bra_grannar: ["basilika", "lok", "oregano"],
-    daliga_grannar: ["bona", "fankal"],
+    daliga_grannar: [{ id: "bona", orsak: "konkurrens" }, { id: "fankal", orsak: "konkurrens" }],
   },
   {
     id: "potatis", namn: "Potatis", familj: "potatisväxter", farg: "#a1887f", symbol: "🥔",
@@ -103,7 +106,7 @@ export const PLANTS: Plant[] = [
     skord_kg_per_m2: 4,
     beskrivning: "Enkel och tacksam – kupa jord runt plantorna för större knölar och skydd mot bladmögel.",
     bra_grannar: ["bona", "majs", "vitkal", "tagetes"],
-    daliga_grannar: ["tomat", "gurka", "zucchini", "solros", "pumpa"],
+    daliga_grannar: [{ id: "tomat", orsak: "sjukdom" }, { id: "gurka", orsak: "sjukdom" }, { id: "zucchini", orsak: "sjukdom" }, { id: "solros", orsak: "konkurrens" }, { id: "pumpa", orsak: "sjukdom" }],
   },
 
   // ---------- rotfrukter ----------
@@ -118,7 +121,7 @@ export const PLANTS: Plant[] = [
     skord_kg_per_m2: 4,
     beskrivning: "Sås tätt i raden och gallras – långsam att gro men mycket tålig. Ger stor skörd på liten yta.",
     bra_grannar: ["lok", "purjolok", "radisa", "sallat", "graslok"],
-    daliga_grannar: ["dill"],
+    daliga_grannar: [{ id: "dill", orsak: "skadedjur" }],
   },
   {
     id: "rodbeta", namn: "Rödbeta", familj: "mållväxter", farg: "#ad1457", symbol: "🔴",
@@ -131,7 +134,7 @@ export const PLANTS: Plant[] = [
     skord_kg_per_m2: 4,
     beskrivning: "Odlas för både rot och blad – tåligt och lättodlat, bra växt för nybörjare.",
     bra_grannar: ["lok", "kalrabbi", "vitkal", "graslok"],
-    daliga_grannar: ["bona"],
+    daliga_grannar: [{ id: "bona", orsak: "konkurrens" }],
   },
   {
     id: "palsternacka", namn: "Palsternacka", familj: "flockblommiga", farg: "#d7ccc8", symbol: "🥕",
@@ -144,7 +147,7 @@ export const PLANTS: Plant[] = [
     skord_kg_per_m2: 3,
     beskrivning: "Lång odlingssäsong men smaken förbättras av frost – skörda gärna efter första kölden.",
     bra_grannar: ["lok", "radisa"],
-    daliga_grannar: ["dill"],
+    daliga_grannar: [{ id: "dill", orsak: "skadedjur" }],
   },
   {
     id: "kalrot", namn: "Kålrot", familj: "korsblommiga", farg: "#f4d35e", symbol: "🥔",
@@ -157,7 +160,7 @@ export const PLANTS: Plant[] = [
     skord_kg_per_m2: 5,
     beskrivning: "Storväxande rotfrukt som lagrar bra – ger mycket mat per planterad yta.",
     bra_grannar: ["dill", "lok"],
-    daliga_grannar: ["jordgubbe", "tomat"],
+    daliga_grannar: [{ id: "jordgubbe", orsak: "skadedjur" }, { id: "tomat", orsak: "sjukdom" }],
   },
 
   // ---------- kål (korsblommiga) ----------
@@ -172,7 +175,7 @@ export const PLANTS: Plant[] = [
     skord_kg_per_m2: 6,
     beskrivning: "Tar plats och tid men lagrar utmärkt – en klassiker för vinterförråd.",
     bra_grannar: ["dill", "lok", "sallat", "timjan"],
-    daliga_grannar: ["jordgubbe", "tomat"],
+    daliga_grannar: [{ id: "jordgubbe", orsak: "skadedjur" }, { id: "tomat", orsak: "sjukdom" }],
   },
   {
     id: "broccoli", namn: "Broccoli", familj: "korsblommiga", farg: "#2e7d32", symbol: "🥦",
@@ -185,7 +188,7 @@ export const PLANTS: Plant[] = [
     skord_kg_per_m2: 2,
     beskrivning: "Skörda huvudknoppen innan den blommar – nya sidoskott ger sedan flera skördar till.",
     bra_grannar: ["dill", "sallat", "lok"],
-    daliga_grannar: ["jordgubbe", "tomat"],
+    daliga_grannar: [{ id: "jordgubbe", orsak: "skadedjur" }, { id: "tomat", orsak: "sjukdom" }],
   },
   {
     id: "blomkal", namn: "Blomkål", familj: "korsblommiga", farg: "#f5f0e6", symbol: "🥦",
@@ -198,7 +201,7 @@ export const PLANTS: Plant[] = [
     skord_kg_per_m2: 2.5,
     beskrivning: "Kräver jämn tillgång på vatten och näring för att bilda fasta, vita huvuden.",
     bra_grannar: ["sallat", "lok"],
-    daliga_grannar: ["jordgubbe", "tomat"],
+    daliga_grannar: [{ id: "jordgubbe", orsak: "skadedjur" }, { id: "tomat", orsak: "sjukdom" }],
   },
   {
     id: "gronkal", namn: "Grönkål", familj: "korsblommiga", farg: "#33691e", symbol: "🥬",
@@ -211,7 +214,7 @@ export const PLANTS: Plant[] = [
     skord_kg_per_m2: 2,
     beskrivning: "Tålig mot kyla – smaken blir sötare efter de första frostnätterna.",
     bra_grannar: ["dill", "lok"],
-    daliga_grannar: ["jordgubbe"],
+    daliga_grannar: [{ id: "jordgubbe", orsak: "skadedjur" }],
   },
   {
     id: "kalrabbi", namn: "Kålrabbi", familj: "korsblommiga", farg: "#aed581", symbol: "🥬",
@@ -224,7 +227,7 @@ export const PLANTS: Plant[] = [
     skord_kg_per_m2: 3,
     beskrivning: "Snabbväxande och mild i smaken – skörda medan knölen fortfarande är golfbollsstor.",
     bra_grannar: ["rodbeta", "gurka", "lok"],
-    daliga_grannar: ["jordgubbe", "bona"],
+    daliga_grannar: [{ id: "jordgubbe", orsak: "skadedjur" }, { id: "bona", orsak: "konkurrens" }],
   },
   {
     id: "rucola", namn: "Rucola", familj: "korsblommiga", farg: "#8bc34a", symbol: "🥬",
@@ -252,7 +255,7 @@ export const PLANTS: Plant[] = [
     skord_kg_per_m2: 4,
     beskrivning: "Långsam start men lagringsbar länge – låt looken torka ordentligt innan förvaring.",
     bra_grannar: ["morot", "tomat", "sallat", "jordgubbe"],
-    daliga_grannar: ["bona", "art"],
+    daliga_grannar: [{ id: "bona", orsak: "konkurrens" }, { id: "art", orsak: "konkurrens" }],
   },
   {
     id: "vitlok", namn: "Vitlök", familj: "amaryllisväxter", farg: "#f3e5ab", symbol: "🧄",
@@ -267,7 +270,7 @@ export const PLANTS: Plant[] = [
     skord_kg_per_m2: 2,
     beskrivning: "Höstplanteras och övervintrar i jorden – skördas följande sommar när bladen gulnar.",
     bra_grannar: ["rodbeta", "morot", "jordgubbe"],
-    daliga_grannar: ["bona", "art"],
+    daliga_grannar: [{ id: "bona", orsak: "konkurrens" }, { id: "art", orsak: "konkurrens" }],
   },
   {
     id: "purjolok", namn: "Purjolök", familj: "amaryllisväxter", farg: "#7cb342", symbol: "🧅",
@@ -280,7 +283,7 @@ export const PLANTS: Plant[] = [
     skord_kg_per_m2: 4,
     beskrivning: "Tålig och frosthärdig – kan ofta skördas långt in på vintern direkt från bädden.",
     bra_grannar: ["morot", "sallat", "jordgubbe"],
-    daliga_grannar: ["bona", "art"],
+    daliga_grannar: [{ id: "bona", orsak: "konkurrens" }, { id: "art", orsak: "konkurrens" }],
   },
   {
     id: "graslok", namn: "Gräslök", familj: "amaryllisväxter", farg: "#7e57c2", symbol: "🧅",
@@ -293,7 +296,7 @@ export const PLANTS: Plant[] = [
     skord_kg_per_m2: 1,
     beskrivning: "Flerårig krydda som gärna delas – klipp återkommande för nya, mjuka strån.",
     bra_grannar: ["morot", "jordgubbe", "rodbeta"],
-    daliga_grannar: ["bona", "art"],
+    daliga_grannar: [{ id: "bona", orsak: "konkurrens" }, { id: "art", orsak: "konkurrens" }],
   },
 
   // ---------- baljväxter ----------
@@ -308,7 +311,7 @@ export const PLANTS: Plant[] = [
     skord_kg_per_m2: 3,
     beskrivning: "Kvävefixerande buskböna som förbättrar jorden – enkel och pålitlig skörd.",
     bra_grannar: ["potatis", "gurka", "majs", "jordgubbe"],
-    daliga_grannar: ["lok", "fankal", "rodbeta"],
+    daliga_grannar: [{ id: "lok", orsak: "konkurrens" }, { id: "fankal", orsak: "konkurrens" }, { id: "rodbeta", orsak: "konkurrens" }],
   },
   {
     id: "art", namn: "Ärt", familj: "ärtväxter", farg: "#9ccc65", symbol: "🫛",
@@ -321,7 +324,7 @@ export const PLANTS: Plant[] = [
     skord_kg_per_m2: 2,
     beskrivning: "Kallälskande – så tidigt på våren innan värmen sätter fart på skadeinsekter.",
     bra_grannar: ["morot", "radisa", "gurka"],
-    daliga_grannar: ["lok", "vitlok"],
+    daliga_grannar: [{ id: "lok", orsak: "konkurrens" }, { id: "vitlok", orsak: "konkurrens" }],
   },
 
   // ---------- gurkväxter ----------
@@ -336,7 +339,7 @@ export const PLANTS: Plant[] = [
     skord_kg_per_m2: 8,
     beskrivning: "Trivs bäst med stöd att klättra på – jämn vattning ger raka, sötare frukter.",
     bra_grannar: ["sallat", "bona", "dill", "majs"],
-    daliga_grannar: ["potatis", "tomat"],
+    daliga_grannar: [{ id: "potatis", orsak: "sjukdom" }, { id: "tomat", orsak: "sjukdom" }],
   },
   {
     id: "zucchini", namn: "Zucchini", familj: "gurkväxter", farg: "#558b2f", symbol: "🥒",
@@ -349,7 +352,7 @@ export const PLANTS: Plant[] = [
     skord_kg_per_m2: 10,
     beskrivning: "Extremt produktiv – en enda planta kan ge skörd flera gånger i veckan hela sommaren.",
     bra_grannar: ["majs", "dill", "ringblomma"],
-    daliga_grannar: ["potatis"],
+    daliga_grannar: [{ id: "potatis", orsak: "sjukdom" }],
   },
   {
     id: "pumpa", namn: "Pumpa", familj: "gurkväxter", farg: "#f4511e", symbol: "🎃",
@@ -362,7 +365,7 @@ export const PLANTS: Plant[] = [
     skord_kg_per_m2: 10,
     beskrivning: "Storväxande – ger enorm skörd men behöver plats, gärna 1 m² eller mer per planta.",
     bra_grannar: ["majs", "bona", "tagetes"],
-    daliga_grannar: ["potatis"],
+    daliga_grannar: [{ id: "potatis", orsak: "sjukdom" }],
   },
 
   // ---------- bladgrönt ----------
@@ -444,7 +447,7 @@ export const PLANTS: Plant[] = [
     skord_kg_per_m2: 1,
     beskrivning: "Självsår gärna – låt några plantor gå i frö så kommer nästa års skörd av sig själv.",
     bra_grannar: ["gurka", "sallat", "lok", "vitkal"],
-    daliga_grannar: ["morot", "fankal"],
+    daliga_grannar: [{ id: "morot", orsak: "skadedjur" }, { id: "fankal", orsak: "konkurrens" }],
   },
   {
     id: "persilja", namn: "Persilja", familj: "flockblommiga", farg: "#43a047", symbol: "🌿",
@@ -484,7 +487,7 @@ export const PLANTS: Plant[] = [
     beskrivning: "Stark smak och kemiskt hämmande på grannarna – odla gärna för sig själv i egen ruta.",
     // Fänkål hämmar de flesta andra växter kemiskt — odlas helst för sig, inga bra grannar.
     bra_grannar: [],
-    daliga_grannar: ["tomat", "bona", "gurka", "dill"],
+    daliga_grannar: [{ id: "tomat", orsak: "konkurrens" }, { id: "bona", orsak: "konkurrens" }, { id: "gurka", orsak: "konkurrens" }, { id: "dill", orsak: "konkurrens" }],
   },
   {
     id: "timjan", namn: "Timjan", familj: "kransblommiga", farg: "#8d6e63", symbol: "🌿",
@@ -538,7 +541,7 @@ export const PLANTS: Plant[] = [
     skord_kg_per_m2: 1.5,
     beskrivning: "Ge plantorna ett år att etablera sig för bästa skörd – förnya odlingen var 3–4 år.",
     bra_grannar: ["lok", "graslok", "sallat", "spenat"],
-    daliga_grannar: ["vitkal", "kalrabbi", "broccoli"],
+    daliga_grannar: [{ id: "vitkal", orsak: "skadedjur" }, { id: "kalrabbi", orsak: "skadedjur" }, { id: "broccoli", orsak: "skadedjur" }],
   },
   {
     id: "ringblomma", namn: "Ringblomma", familj: "korgblommiga", farg: "#ffa726", symbol: "🌼",
@@ -574,7 +577,7 @@ export const PLANTS: Plant[] = [
     vattenbehov: "medel", solbehov: "sol", jord: "Näringsrik, djup jord", hojd_cm: 200,
     beskrivning: "Storväxt blickfång som ger eftermiddagsskugga och senare en fröskörd till fåglarna.",
     bra_grannar: ["gurka", "majs"],
-    daliga_grannar: ["potatis", "bona"],
+    daliga_grannar: [{ id: "potatis", orsak: "konkurrens" }, { id: "bona", orsak: "konkurrens" }],
   },
   {
     id: "majs", namn: "Majs", familj: "gräsväxter", farg: "#fbc02d", symbol: "🌽",
@@ -587,7 +590,7 @@ export const PLANTS: Plant[] = [
     skord_kg_per_m2: 2,
     beskrivning: "Vindpollinerad – odla alltid i ett block med flera rader, aldrig en enda lång rad.",
     bra_grannar: ["bona", "gurka", "zucchini"],
-    daliga_grannar: ["tomat"],
+    daliga_grannar: [{ id: "tomat", orsak: "skadedjur" }],
   },
 ];
 

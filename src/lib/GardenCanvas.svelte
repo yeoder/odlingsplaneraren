@@ -12,6 +12,7 @@
     solPosition, skuggLangdCm, skuggAzimut, skuggOffset, platsByNamn, SASONGER, MIN_SOLHOJD,
   } from "./sun";
   import { staarIJord, hojdVidDatum, sasongensDatum } from "./schedule";
+  import { boxFuktNu } from "./moisture";
 
   export let garden: Garden;
   export let onchange: () => void = () => {};
@@ -494,6 +495,22 @@
           fontSize: fs, fill: isGang ? "#77705f" : "#ffffffbb",
           listening: false,
         }));
+      }
+
+      // Fuktmärke: droppar i hörnet visar hur rutan bör vattnas, härlett ur växterna
+      // som står där just nu. Ritas som ikon och inte text, så det inte stör vid plantering.
+      if (b.typ === "odling") {
+        const profil = boxFuktNu(garden, b);
+        if (profil) {
+          const antal = profil.niva === "låg" ? 1 : profil.niva === "medel" ? 2 : 3;
+          const storlek = Math.min(13, Math.max(7, Math.min(b.w, b.h) / 7));
+          const märke = new Konva.Text({
+            x: 4, y: b.h - storlek - 4,
+            text: profil.konflikt ? "💧⚠" : "💧".repeat(antal),
+            fontSize: storlek, listening: false, opacity: 0.9,
+          });
+          g.add(märke);
+        }
       }
 
       g.dragBoundFunc(function (pos) {

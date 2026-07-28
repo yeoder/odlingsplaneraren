@@ -78,7 +78,7 @@ Plant       { id, namn, familj, avstand_cm, hojd_cm, vattenbehov, sol, tider...,
 - **M0 — Projektskelett:** Svelte + Vite + Konva igång, rityta med 5 cm-grid. Publikt repo på GitHub + Pages-deploy (appen ligger live från dag 1).
 - **M1 — Boxar:** placera/flytta/duplicera (högerklick)/rotera boxar och gångar, snap, ingen overlap, spara/ladda fil.
 - **M2 — Plantrader:** drag & drop av rader med rätt mått, rotation, komprimering 80–100 % med varning, avstånd mot boxkant/andra rader.
-- **M3 — Regelmotor:** kompanjoner och fukt per box. Se detaljplanen nedan.
+- **M3 — Regelmotor:** kompanjoner och fukt per box. KLAR.
 
 ## M3 i detalj — fukt och kompanjoner
 
