@@ -6,7 +6,7 @@
     rectsOverlap, rectInside, rotatedBox, rotatedRow, plantHeight,
     type Garden, type Box, type PlantRow, type Rect,
   } from "./model";
-  import { plantById } from "./plants";
+  import { plantById, type Plant } from "./plants";
   import { formatCm } from "./rules";
   import {
     solPosition, skuggLangdCm, skuggAzimut, skuggOffset, platsByNamn, SASONGER, MIN_SOLHOJD,
@@ -25,6 +25,7 @@
   let boxLayer: Konva.Layer;
   let shadowLayer: Konva.Layer;
   let rowLayer: Konva.Layer;
+  let labelLayer: Konva.Layer;
   let ghostLayer: Konva.Layer;
 
   // --- läge ---
@@ -368,16 +369,22 @@
     }
   }
 
-  // Namnskylt bredvid raden — liten, utanför fotavtrycket så den inte skymmer plantorna.
-  function drawRowLabel(g: Konva.Group, row: PlantRow) {
-    const plant = plantById[row.plantId];
-    const r = rowRect(row, plant);
+  // Namnskyltar ritas i ett eget lager ovanpå ALLA rader, inte som barn till
+  // varje rads egen grupp. Låg de kvar i radens grupp hamnade en skylt bakom
+  // vilken senare tillagd rad som helst som råkade överlappa dess yta i skärmled
+  // — ordningen styrdes av garden.rows array-index, inte av var raderna faktiskt
+  // låg. Rader av SAMMA växt i SAMMA ruta slås dessutom ihop till en skylt med
+  // totalt antal, i stället för en skylt per rad (t.ex. tre rädisrader intill
+  // varandra gav tre kaskaderande "10 ×"-lappar).
+  function drawLabelAt(plant: Plant, count: number, centerX: number, topY: number) {
     const s = stage.scaleX();
     const fontSize = 11 / s;
-    const text = `${row.count} × ${plant.namn}`;
+    const text = `${count} × ${plant.namn}`;
     const padX = 4 / s, padY = 2 / s;
     const approxW = text.length * fontSize * 0.55 + padX * 2;
-    const label = new Konva.Group({ x: r.w / 2 - approxW / 2, y: -(fontSize + padY * 2 + 3 / s) });
+    const label = new Konva.Group({
+      x: centerX - approxW / 2, y: topY - (fontSize + padY * 2 + 3 / s),
+    });
     label.add(new Konva.Rect({
       width: approxW, height: fontSize + padY * 2,
       fill: "#fffffff2", stroke: plant.farg, strokeWidth: 1 / s, cornerRadius: 3 / s,
@@ -385,8 +392,32 @@
     label.add(new Konva.Text({
       x: padX, y: padY, text, fontSize, fill: "#3e3a33",
     }));
-    label.listening(false);
-    g.add(label);
+    labelLayer.add(label);
+  }
+
+  function renderLabels() {
+    labelLayer.destroyChildren();
+    if (!garden.showLabels) { labelLayer.batchDraw(); return; }
+
+    const grupper = new Map<string, { plant: Plant; rows: PlantRow[] }>();
+    for (const row of garden.rows) {
+      const plant = plantById[row.plantId];
+      if (!plant) continue;
+      const nyckel = `${row.boxId}-${row.plantId}`;
+      let grp = grupper.get(nyckel);
+      if (!grp) { grp = { plant, rows: [] }; grupper.set(nyckel, grp); }
+      grp.rows.push(row);
+    }
+
+    for (const grp of grupper.values()) {
+      const rects = grp.rows.map(r => rowRect(r, grp.plant));
+      const minX = Math.min(...rects.map(r => r.x));
+      const minY = Math.min(...rects.map(r => r.y));
+      const maxX = Math.max(...rects.map(r => r.x + r.w));
+      const antal = grp.rows.reduce((s, r) => s + r.count, 0);
+      drawLabelAt(grp.plant, antal, (minX + maxX) / 2, minY);
+    }
+    labelLayer.batchDraw();
   }
 
   function renderRows() {
@@ -409,8 +440,6 @@
         g.add(new Konva.Line({ points: [0, 0, r.w, r.h], ...streck }));
         g.add(new Konva.Line({ points: [0, r.h, r.w, 0], ...streck }));
       }
-      if (garden.showLabels) drawRowLabel(g, row);
-
       if (selectedRowId === row.id) {
         g.add(new Konva.Rect({
           x: 0, y: 0, width: r.w, height: r.h,
@@ -666,6 +695,7 @@
     renderBoxes();
     renderRows();
     renderShadows();
+    renderLabels();
     onselect(getSelection());
   }
 
@@ -1022,8 +1052,9 @@
     boxLayer = new Konva.Layer();
     shadowLayer = new Konva.Layer({ listening: false });
     rowLayer = new Konva.Layer();
+    labelLayer = new Konva.Layer({ listening: false });
     ghostLayer = new Konva.Layer({ listening: false });
-    stage.add(gridLayer, boxLayer, shadowLayer, rowLayer, ghostLayer);
+    stage.add(gridLayer, boxLayer, shadowLayer, rowLayer, labelLayer, ghostLayer);
 
     stage.on("wheel", (e) => {
       e.evt.preventDefault();
