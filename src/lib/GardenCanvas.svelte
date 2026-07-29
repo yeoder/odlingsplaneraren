@@ -1173,7 +1173,12 @@
 </div>
 
 <style>
-  .wrap { position: relative; width: 100%; height: 100%; }
+  /* flex:1 + min-height:0: .wrap är ett flex-item i förälderns kolumnlayout
+     (.mitten). Konvas <canvas>-element har en explicit pixelstorlek satt av
+     JS, som annars ger .wrap ett "naturligt" innehållsmått flexbox vägrar
+     krympa under (standard min-height:auto) — då kan ResizeObserver aldrig
+     upptäcka att ytan ska bli mindre igen, t.ex. när årsschemat fälls ut. */
+  .wrap { position: relative; width: 100%; height: 100%; flex: 1; min-height: 0; }
   .canvas {
     width: 100%; height: 100%;
     background: #dcd6c8; border-radius: 8px; overflow: hidden;
