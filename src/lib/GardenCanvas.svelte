@@ -909,6 +909,35 @@
     renderAll();
   }
 
+  /**
+   * Bild av HELA odlingen (inte bara det synliga utsnittet) för export/utskrift.
+   * Ritar tillfälligt om vid en fast skala med markeringar och menyer avstängda,
+   * och återställer sedan användarens egen zoom/position.
+   */
+  export function exportImageDataUrl(): string {
+    if (!stage) return "";
+    const sparadSkala = stage.scaleX();
+    const sparadPos = { x: stage.x(), y: stage.y() };
+    const sparadVal = { box: selectedBoxId, row: selectedRowId };
+    selectedBoxId = null; selectedRowId = null;
+
+    const PX_PER_CM = 3; // skarp bild oavsett aktuell zoom på skärmen
+    stage.scale({ x: PX_PER_CM, y: PX_PER_CM });
+    stage.position({ x: 0, y: 0 });
+    renderAll();
+
+    const url = stage.toDataURL({
+      x: 0, y: 0, width: garden.widthCm * PX_PER_CM, height: garden.heightCm * PX_PER_CM,
+      pixelRatio: 1, mimeType: "image/png",
+    });
+
+    stage.scale({ x: sparadSkala, y: sparadSkala });
+    stage.position(sparadPos);
+    selectedBoxId = sparadVal.box; selectedRowId = sparadVal.row;
+    renderAll();
+    return url;
+  }
+
   // --- API för verktygsradens knappar ---
   export function getSelection(): { kind: "box" | "row"; id: number } | null {
     if (selectedRowId !== null) return { kind: "row", id: selectedRowId };

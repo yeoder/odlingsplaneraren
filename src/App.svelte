@@ -48,6 +48,20 @@
 
   // --- skuggöversyn ---
   let visaSkuggoversyn = false;
+
+  // --- export/utskrift ---
+  // Ingen PDF-bibliotek behövs: en dold utskriftssektion fylls med en bild av
+  // odlingen (fångad från canvasen i full storlek, inte bara det synliga
+  // utsnittet) plus varningar och hela schemat, och webbläsarens vanliga
+  // utskriftsdialog ("Spara som PDF") tar hand om resten.
+  let exportBild = "";
+  let exportDatum = "";
+  function exportPlan() {
+    exportBild = canvas?.exportImageDataUrl() ?? "";
+    exportDatum = new Date().toLocaleDateString("sv-SE", { day: "numeric", month: "long", year: "numeric" });
+    // ge Svelte en tick att sätta in bilden i DOM:en innan utskriftsdialogen öppnas
+    requestAnimationFrame(() => requestAnimationFrame(() => window.print()));
+  }
   let skuggposter: SkuggPost[] = [];
   $: if (visaSkuggoversyn) skuggposter = skuggAnalys(garden);
 
@@ -278,6 +292,7 @@
       ❄ {garden.sistaFrostDatum} → {garden.forstaHostfrostDatum}
     </span>
     <button class="installningar" on:click={() => visaInstallningar = true}>⚙ Ändra</button>
+    <button class="installningar" on:click={exportPlan}>📄 Exportera / Skriv ut</button>
   </div>
 </header>
 
@@ -637,6 +652,59 @@
   </div>
 {/if}
 
+<!-- Osynlig i vanligt läge, visas bara via @media print (se print-export-CSS).
+     Innehåller alltid HELA schemat och alla varningar oavsett vad som är
+     minimerat på skärmen, så exporten inte tappar information. -->
+<div class="print-export">
+  <h1>🌱 {garden.widthCm / 100}×{garden.heightCm / 100} m odling — {garden.platsNamn}</h1>
+  <p class="print-meta">
+    Exporterad {exportDatum} · Sista vårfrost {garden.sistaFrostDatum} ·
+    Första höstfrost {garden.forstaHostfrostDatum}
+  </p>
+
+  {#if exportBild}
+    <img class="print-img" src={exportBild} alt="Karta över odlingen" />
+  {/if}
+
+  <h2>Varningar &amp; noteringar</h2>
+  {#if warnings.length === 0}
+    <p>Inga varningar – allt ser bra ut.</p>
+  {:else}
+    <ul class="print-warnlist">
+      {#each warnings as w}
+        <li>
+          <strong>{w.niva === "varning" ? "⚠" : "ℹ"} {w.rubrik}</strong>
+          <span>{w.text}</span>
+        </li>
+      {/each}
+    </ul>
+  {/if}
+
+  <h2>Årsschema — vad gör jag när?</h2>
+  {#if schema.length === 0}
+    <p>Inga planterade rader ännu.</p>
+  {:else}
+    <table class="print-schema">
+      <thead>
+        <tr>
+          <th>Vecka</th>
+          {#each ATGARDER as a}<th>{ATGARD_RUBRIK[a]}</th>{/each}
+        </tr>
+      </thead>
+      <tbody>
+        {#each schema as v}
+          <tr>
+            <td>V {v.vecka}<br /><small>{formateraDatum(v.datum)}</small></td>
+            {#each ATGARDER as a}
+              <td>{v.atgarder[a].length ? v.atgarder[a].map(p => p.text).join(", ") : "–"}</td>
+            {/each}
+          </tr>
+        {/each}
+      </tbody>
+    </table>
+  {/if}
+</div>
+
 <style>
   header {
     background: #4e7a3a; color: #fff; padding: 10px 18px;
@@ -961,5 +1029,36 @@
   .orsak {
     font-size: 0.66rem; color: #a8836b; background: #f3ece4;
     border-radius: 8px; padding: 1px 6px; margin-left: 4px;
+  }
+
+  /* ---- export/utskrift ---- */
+  .print-export { display: none; }
+
+  @media print {
+    /* Svelte monterar allt i #app, inte direkt i body — döljer #app:s övriga
+       barn (header/main/schema) men behåller dem i DOM:en. */
+    :global(#app > *:not(.print-export)) { display: none !important; }
+    .print-export { display: block; }
+
+    .print-export h1 { font-size: 1.3rem; margin: 0 0 4px; }
+    .print-export h2 {
+      font-size: 1rem; margin: 20px 0 8px; border-bottom: 1px solid #ccc; padding-bottom: 4px;
+    }
+    .print-meta { font-size: 0.8rem; color: #555; margin: 0 0 16px; }
+    .print-img { width: 100%; max-height: 70vh; object-fit: contain; border: 1px solid #ccc; }
+
+    .print-warnlist { list-style: none; padding: 0; margin: 0; }
+    .print-warnlist li {
+      break-inside: avoid; margin-bottom: 8px; padding-bottom: 8px; border-bottom: 1px solid #eee;
+    }
+    .print-warnlist strong { display: block; font-size: 0.85rem; }
+    .print-warnlist span { font-size: 0.78rem; color: #444; }
+
+    .print-schema { width: 100%; border-collapse: collapse; font-size: 0.75rem; }
+    .print-schema th, .print-schema td {
+      border: 1px solid #ccc; padding: 4px 6px; text-align: left; vertical-align: top;
+    }
+    .print-schema thead { display: table-header-group; } /* upprepa rubriken på varje sida */
+    .print-schema tr { break-inside: avoid; }
   }
 </style>
