@@ -64,6 +64,7 @@
   $: sasongslangd = sasongslangdDagar(garden.sistaFrostDatum, garden.forstaHostfrostDatum);
 
   let panelHopfalld = false;
+  let schemaHopfalld = false;
   let panLage = false;
   let visaInstallningar = false;
 
@@ -440,49 +441,57 @@
   </section>
 </main>
 
-<section class="schema">
+<section class="schema" class:hopfalld={schemaHopfalld}>
   <div class="schema-head">
+    <button class="schema-toggle" on:click={() => schemaHopfalld = !schemaHopfalld}
+            title={schemaHopfalld ? "Visa årsschemat" : "Minimera årsschemat"}>
+      {schemaHopfalld ? "▲" : "▼"}
+    </button>
     <h2>Årsschema — vad gör jag när?</h2>
-    <span class="schema-hint">
-      Veckorna räknas från sista vårfrost ({garden.sistaFrostDatum}). Skörd står inte med –
-      den sker när grödan ser färdig ut, inte efter kalender.
-    </span>
+    {#if !schemaHopfalld}
+      <span class="schema-hint">
+        Veckorna räknas från sista vårfrost ({garden.sistaFrostDatum}). Skörd står inte med –
+        den sker när grödan ser färdig ut, inte efter kalender.
+      </span>
+    {/if}
   </div>
 
-  {#if schema.length === 0}
-    <p class="schema-tom">Plantera något i odlingen så byggs schemat upp här automatiskt.</p>
-  {:else}
-    <div class="schema-scroll">
-      <table>
-        <thead>
-          <tr>
-            <th class="vkol">Vecka</th>
-            {#each ATGARDER as a}<th>{ATGARD_RUBRIK[a]}</th>{/each}
-          </tr>
-        </thead>
-        <tbody>
-          {#each schema as v}
+  {#if !schemaHopfalld}
+    {#if schema.length === 0}
+      <p class="schema-tom">Plantera något i odlingen så byggs schemat upp här automatiskt.</p>
+    {:else}
+      <div class="schema-scroll">
+        <table>
+          <thead>
             <tr>
-              <td class="vkol">
-                <strong>V {v.vecka}</strong>
-                <span class="vdatum">{formateraDatum(v.datum)}</span>
-              </td>
-              {#each ATGARDER as a}
-                <td>
-                  {#if v.atgarder[a].length}
-                    {#each v.atgarder[a] as post}
-                      <span class="chip {a}">{post.text}</span>
-                    {/each}
-                  {:else}
-                    <span class="tomcell">–</span>
-                  {/if}
-                </td>
-              {/each}
+              <th class="vkol">Vecka</th>
+              {#each ATGARDER as a}<th>{ATGARD_RUBRIK[a]}</th>{/each}
             </tr>
-          {/each}
-        </tbody>
-      </table>
-    </div>
+          </thead>
+          <tbody>
+            {#each schema as v}
+              <tr>
+                <td class="vkol">
+                  <strong>V {v.vecka}</strong>
+                  <span class="vdatum">{formateraDatum(v.datum)}</span>
+                </td>
+                {#each ATGARDER as a}
+                  <td>
+                    {#if v.atgarder[a].length}
+                      {#each v.atgarder[a] as post}
+                        <span class="chip {a}">{post.text}</span>
+                      {/each}
+                    {:else}
+                      <span class="tomcell">–</span>
+                    {/if}
+                  </td>
+                {/each}
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+      </div>
+    {/if}
   {/if}
 </section>
 {/if}
@@ -880,7 +889,15 @@
     flex: none; margin: 0 12px 12px; background: #fff; border: 1px solid #d8d2c4;
     border-radius: 8px; padding: 12px; max-height: 34vh; display: flex; flex-direction: column;
   }
+  .schema.hopfalld { max-height: none; }
   .schema-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 8px; }
+  .schema.hopfalld .schema-head { margin-bottom: 0; }
+  .schema-toggle {
+    flex: none; border: 1px solid #d8d2c4; border-radius: 5px; background: #faf8f3;
+    width: 24px; height: 22px; cursor: pointer; font-size: 0.7rem; color: #8a8371;
+    align-self: center;
+  }
+  .schema-toggle:hover { background: #eaf2e3; }
   .schema h2 { font-size: 0.95rem; margin: 0; }
   .schema-hint { font-size: 0.72rem; color: #8a8371; }
   .schema-tom { font-size: 0.78rem; color: #77705f; margin: 0; }

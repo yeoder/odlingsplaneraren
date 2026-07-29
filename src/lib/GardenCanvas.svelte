@@ -881,10 +881,11 @@
   // så de följer med när odlingen eller fönstret ändrar storlek.
   let passaSkala = 1;
 
-  // Ut: hela odlingen plus marginal, så skuggor utanför kanten syns.
-  // In: dubbelt så stort som helbilden — mer än så tappar man överblicken.
-  const UT_FAKTOR = 0.75;
-  const IN_FAKTOR = 2;
+  // Ut: bara lite marginal runt helbilden, för små trädgårdar (5×10 m-klassen)
+  // blir 0.75 en överdrivet stor utzoomning. In: odlingar i den storleken vill
+  // kunna zoomas in rejält för att placera enskilda plantor exakt.
+  const UT_FAKTOR = 0.9;
+  const IN_FAKTOR = 6;
 
   function fitToView() {
     const pad = 24;
