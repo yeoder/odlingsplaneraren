@@ -376,25 +376,6 @@
   // låg. Rader av SAMMA växt i SAMMA ruta slås dessutom ihop till en skylt med
   // totalt antal, i stället för en skylt per rad (t.ex. tre rädisrader intill
   // varandra gav tre kaskaderande "10 ×"-lappar).
-  function drawLabelAt(plant: Plant, count: number, centerX: number, topY: number) {
-    const s = stage.scaleX();
-    const fontSize = 11 / s;
-    const text = `${count} × ${plant.namn}`;
-    const padX = 4 / s, padY = 2 / s;
-    const approxW = text.length * fontSize * 0.55 + padX * 2;
-    const label = new Konva.Group({
-      x: centerX - approxW / 2, y: topY - (fontSize + padY * 2 + 3 / s),
-    });
-    label.add(new Konva.Rect({
-      width: approxW, height: fontSize + padY * 2,
-      fill: "#fffffff2", stroke: plant.farg, strokeWidth: 1 / s, cornerRadius: 3 / s,
-    }));
-    label.add(new Konva.Text({
-      x: padX, y: padY, text, fontSize, fill: "#3e3a33",
-    }));
-    labelLayer.add(label);
-  }
-
   function renderLabels() {
     labelLayer.destroyChildren();
     if (!garden.showLabels) { labelLayer.batchDraw(); return; }
@@ -409,13 +390,54 @@
       grp.rows.push(row);
     }
 
+    const s = stage.scaleX();
+    const fontSize = 11 / s;
+    const padX = 4 / s, padY = 2 / s;
+    const height = fontSize + padY * 2;
+
+    const etiketter: { plant: Plant; antal: number; text: string; x: number; y: number; w: number; h: number }[] = [];
     for (const grp of grupper.values()) {
       const rects = grp.rows.map(r => rowRect(r, grp.plant));
       const minX = Math.min(...rects.map(r => r.x));
       const minY = Math.min(...rects.map(r => r.y));
       const maxX = Math.max(...rects.map(r => r.x + r.w));
-      const antal = grp.rows.reduce((s, r) => s + r.count, 0);
-      drawLabelAt(grp.plant, antal, (minX + maxX) / 2, minY);
+      const antal = grp.rows.reduce((sum, r) => sum + r.count, 0);
+      const text = `${antal} × ${grp.plant.namn}`;
+      const w = text.length * fontSize * 0.55 + padX * 2;
+      etiketter.push({
+        plant: grp.plant, antal, text, w, h: height,
+        x: (minX + maxX) / 2 - w / 2, y: minY - height - 3 / s,
+      });
+    }
+
+    // Krockande skyltar knuffas isär diagonalt (en uppåt/vänster, en
+    // nedåt/höger) i stället för att ligga rakt ovanpå varandra.
+    const nudge = 3 / s;
+    for (let pass = 0; pass < 6; pass++) {
+      let krock = false;
+      for (let i = 0; i < etiketter.length; i++) {
+        for (let j = i + 1; j < etiketter.length; j++) {
+          const a = etiketter[i], b = etiketter[j];
+          if (a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y) {
+            krock = true;
+            a.x -= nudge; a.y -= nudge;
+            b.x += nudge; b.y += nudge;
+          }
+        }
+      }
+      if (!krock) break;
+    }
+
+    for (const e of etiketter) {
+      const label = new Konva.Group({ x: e.x, y: e.y });
+      label.add(new Konva.Rect({
+        width: e.w, height: e.h,
+        fill: "#fffffff2", stroke: e.plant.farg, strokeWidth: 1 / s, cornerRadius: 3 / s,
+      }));
+      label.add(new Konva.Text({
+        x: padX, y: padY, text: e.text, fontSize, fill: "#3e3a33",
+      }));
+      labelLayer.add(label);
     }
     labelLayer.batchDraw();
   }
