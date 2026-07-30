@@ -11,7 +11,10 @@
 // två användbara mått:
 //   • ljusforlust — andel av dagens ljus som skuggas bort (det som avgör varningen)
 //   • soltimmar   — antal timmar med huvudsakligen direkt sol (det odlare tänker i)
-import { rowRect, plantHeight, type Garden, type Rect } from "./model";
+import {
+  rowRect, plantHeight, jordNiva, kantHojd, arUpphojd, ramVaggar,
+  type Box, type Garden, type Rect,
+} from "./model";
 import { plantById, type Plant } from "./plants";
 import {
   solPosition, skuggLangdCm, skuggAzimut, skuggOffset, platsByNamn,
@@ -58,6 +61,34 @@ export interface SkuggPost {
 
 interface Kastare { rect: Rect; dx: number; dy: number; namn: string; tathet: number }
 
+// En upphöjd bädd flyttar både växterna och problemet uppåt.
+//
+// Höjder räknas därför genomgående från MARKEN, inte från den jord växten står i.
+// En pallkrage 50 cm hög med 35 cm jord ger en tomat i bädden toppen på 35 + sin
+// egen höjd, medan kanten toppar på 50. Skuggan en kastare lägger på en mottagare
+// beror på skillnaden mellan kastarens topp och mottagarens JORDYTA — samma kant
+// som bara sticker upp 15 cm inuti bädden skymmer 50 cm för en granne på marken.
+// Därför beräknas skugglängden per par i stället för en gång per kastare.
+interface Kalla {
+  rect: Rect;
+  topp: number;    // överkant över marken (cm)
+  namn: string;
+  tathet: number;  // 0–1, hur mycket ljus som stoppas
+  rowId: number | null; // null = ramkant, inte en plantrad
+}
+
+/** Ramkanterna som skuggkällor. Virke släpper inte igenom något ljus. */
+function ramKallor(boxar: Box[]): Kalla[] {
+  const ut: Kalla[] = [];
+  for (const b of boxar) {
+    if (!arUpphojd(b)) continue;
+    for (const rect of ramVaggar(b)) {
+      ut.push({ rect, topp: kantHojd(b), namn: `kanten på ${b.label || "den upphöjda bädden"}`, tathet: 1, rowId: null });
+    }
+  }
+  return ut;
+}
+
 /**
  * Hur mycket ljus som tas bort över rutan (punktprov).
  *
@@ -96,10 +127,13 @@ export function skuggAnalys(garden: Garden): SkuggPost[] {
     const datum = new Date(ar, sasong.manad - 1, sasong.dag, 12);
 
     // rader som står i jorden just den här säsongen
+    const boxAv = (boxId: number) => garden.boxes.find(b => b.id === boxId);
     const aktiva = garden.rows
-      .map(r => ({ row: r, plant: plantById[r.plantId] }))
+      .map(r => ({ row: r, plant: plantById[r.plantId], bas: jordNiva(boxAv(r.boxId)) }))
       .filter(x => x.plant && staarIJord(x.plant, frost, datum, hostfrost));
     if (aktiva.length === 0) continue;
+
+    const ramar = ramKallor(garden.boxes);
 
     // per rad: viktad ljusförlust och soltimmar under dygnet
     const summa = new Map<number, { vikt: number; forlust: number; soltimmar: number;
@@ -116,16 +150,13 @@ export function skuggAnalys(garden: Garden): SkuggPost[] {
       const vikt = Math.sin((sol.hojdGrader * Math.PI) / 180);
       const az = skuggAzimut(sol.azimutGrader);
 
-      // alla skuggkastare den här timmen
-      const kastare: (Kastare & { rowId: number })[] = [];
+      // alla skuggkällor den här timmen, med överkant räknad från marken
+      const kallor: Kalla[] = [...ramar];
       for (const a of aktiva) {
         const hojd = hojdVidDatum(a.plant, plantHeight(garden, a.plant.id, a.plant.hojd_cm),
                                   frost, datum);
-        const langd = skuggLangdCm(hojd, sol.hojdGrader);
-        if (langd < 10) continue;
-        const { dx, dy } = skuggOffset(langd, az, garden.sunDirectionDeg);
-        kastare.push({
-          rect: rowRect(a.row, a.plant), dx, dy,
+        kallor.push({
+          rect: rowRect(a.row, a.plant), topp: a.bas + hojd,
           namn: a.plant.namn, tathet: a.plant.skuggtathet ?? 0.7, rowId: a.row.id,
         });
       }
@@ -133,15 +164,19 @@ export function skuggAnalys(garden: Garden): SkuggPost[] {
       for (const a of aktiva) {
         const egenHojd = hojdVidDatum(a.plant, plantHeight(garden, a.plant.id, a.plant.hojd_cm),
                                       frost, datum);
-        // bara högre grannar kan skugga meningsfullt
-        const relevanta = kastare.filter(k => {
-          if (k.rowId === a.row.id) return false;
-          const annan = aktiva.find(x => x.row.id === k.rowId);
-          if (!annan) return false;
-          const h = hojdVidDatum(annan.plant, plantHeight(garden, annan.plant.id, annan.plant.hojd_cm),
-                                 frost, datum);
-          return h > egenHojd * 1.25;
-        });
+        // Bara det som når meningsfullt över mottagarens egen topp kan skugga.
+        // Höjden mäts från mottagarens jordyta: står den upphöjd är marknivåns
+        // grannar redan "under" den.
+        const relevanta: Kastare[] = [];
+        for (const k of kallor) {
+          if (k.rowId !== null && k.rowId === a.row.id) continue;
+          const over = k.topp - a.bas;
+          if (over <= egenHojd * 1.25) continue;
+          const langd = skuggLangdCm(over, sol.hojdGrader);
+          if (langd < 10) continue;
+          const { dx, dy } = skuggOffset(langd, az, garden.sunDirectionDeg);
+          relevanta.push({ rect: k.rect, dx, dy, namn: k.namn, tathet: k.tathet });
+        }
 
         const rect = rowRect(a.row, a.plant);
         const andel = skuggadAndel(rect, relevanta);

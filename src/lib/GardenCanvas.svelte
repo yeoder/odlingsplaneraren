@@ -4,6 +4,7 @@
   import {
     GRID_CM, MIN_COMPRESSION, MAX_COMPRESSION, MIN_ROW_COMPRESSION, rowComp, snap, overlaps, saveGarden, rowRect,
     rectsOverlap, rectInside, rotatedBox, rotatedRow, plantHeight,
+    arUpphojd, kantHojd, jordNiva, ramVaggar, PALLKRAGE_KANT_CM, PALLKRAGE_JORD_CM,
     type Garden, type Box, type PlantRow, type Rect,
   } from "./model";
   import { plantById, type Plant } from "./plants";
@@ -563,13 +564,25 @@
         dash: isGang ? [10, 5] : undefined,
       }));
 
+      // Upphöjd bädd: rita kantbrädorna som en synlig ram. Det är dem som skuggar
+      // in i bädden, så de ska gå att se även när layouten är låst.
+      if (arUpphojd(b)) {
+        for (const v of ramVaggar(b)) {
+          g.add(new Konva.Rect({
+            x: v.x - b.x, y: v.y - b.y, width: v.w, height: v.h,
+            fill: "#a1785a", stroke: "#6d4c33", strokeWidth: 0.8 * sw(), listening: false,
+          }));
+        }
+      }
+
       const fs = Math.min(14, Math.max(8, Math.min(b.w, b.h) / 6));
       // låst läge: dölj all text på boxarna så den inte stör vid plantering
       const labelText = garden.locked
         ? ""
         : isGang
           ? `gång ${b.w / 100}×${b.h / 100} m`
-          : `${b.label ? b.label + " · " : ""}${b.w / 100}×${b.h / 100} m`;
+          : `${b.label ? b.label + " · " : ""}${b.w / 100}×${b.h / 100} m` +
+            (arUpphojd(b) ? ` · ram ${kantHojd(b)} cm / jord ${jordNiva(b)} cm` : "");
       if (labelText) {
         g.add(new Konva.Text({
           x: 4, y: 4, width: b.w - 8,
@@ -689,17 +702,15 @@
     if (!sol.uppe || sol.hojdGrader <= MIN_SOLHOJD) { shadowLayer.batchDraw(); return; }
 
     const az = skuggAzimut(sol.azimutGrader);
-    for (const row of garden.rows) {
-      const plant = plantById[row.plantId];
-      // Växten kastar bara skugga när den faktiskt står i jorden vid det valda
-      // datumet, och med den höjd den hunnit få då — inte sin fullvuxna höjd.
-      if (!plant || !staarIJord(plant, frost, datum, hostfrost)) continue;
-      const hojd = hojdVidDatum(plant, plantHeight(garden, plant.id, plant.hojd_cm), frost, datum);
-      const langd = skuggLangdCm(hojd, sol.hojdGrader);
-      if (langd < 5) continue;
-      const { dx, dy } = skuggOffset(langd, az, garden.sunDirectionDeg);
 
-      const r = rowRect(row, plant);
+    // Skuggan ritas som den faller på MARKEN, så höjden räknas därifrån: en planta
+    // i en upphöjd bädd står redan en bit upp och når längre ut. Inne i bädden är
+    // skuggan i verkligheten kortare än den ritas — där gäller jordytan som golv —
+    // men det är utåt, mot grannraderna, som avståndet spelar roll.
+    const kasta = (r: Rect, hojdOverMark: number) => {
+      const langd = skuggLangdCm(hojdOverMark, sol.hojdGrader);
+      if (langd < 5) return;
+      const { dx, dy } = skuggOffset(langd, az, garden.sunDirectionDeg);
       const horn = [
         { x: r.x, y: r.y }, { x: r.x + r.w, y: r.y },
         { x: r.x + r.w, y: r.y + r.h }, { x: r.x, y: r.y + r.h },
@@ -709,6 +720,21 @@
         points: konvexHolje(alla),
         closed: true, fill: "#2b3a1a", opacity: 0.22, listening: false,
       }));
+    };
+
+    for (const b of garden.boxes) {
+      if (!arUpphojd(b)) continue;
+      for (const v of ramVaggar(b)) kasta(v, kantHojd(b));
+    }
+
+    for (const row of garden.rows) {
+      const plant = plantById[row.plantId];
+      // Växten kastar bara skugga när den faktiskt står i jorden vid det valda
+      // datumet, och med den höjd den hunnit få då — inte sin fullvuxna höjd.
+      if (!plant || !staarIJord(plant, frost, datum, hostfrost)) continue;
+      const hojd = hojdVidDatum(plant, plantHeight(garden, plant.id, plant.hojd_cm), frost, datum);
+      const bas = jordNiva(garden.boxes.find(b => b.id === row.boxId));
+      kasta(rowRect(row, plant), bas + hojd);
     }
     shadowLayer.batchDraw();
   }
@@ -870,6 +896,45 @@
       commit(); renderRows();
     }
     menu.visible = false;
+  }
+
+  // Upphöjd bädd: ramens höjd och jordytans höjd sätts var för sig. Skillnaden är
+  // den kant som sticker upp över jorden, och det är just den som skuggar in i bädden.
+  let ramDlg = { visible: false, boxId: 0, kant: "", jord: "", fel: "" };
+
+  function actRam() {
+    const b = menuBox(); if (!b) return;
+    menu.visible = false;
+    ramDlg = {
+      visible: true, boxId: b.id, fel: "",
+      kant: String(b.kantHojdCm ?? PALLKRAGE_KANT_CM),
+      jord: String(b.jordDjupCm ?? PALLKRAGE_JORD_CM),
+    };
+  }
+
+  function ramOk() {
+    const b = garden.boxes.find(x => x.id === ramDlg.boxId);
+    if (!b) { ramDlg = { ...ramDlg, visible: false }; return; }
+    const kant = Math.round(Number(ramDlg.kant));
+    const jord = Math.round(Number(ramDlg.jord));
+    if (!Number.isFinite(kant) || !Number.isFinite(jord) || kant < 5 || kant > 150) {
+      ramDlg = { ...ramDlg, fel: "Ramens höjd ska vara mellan 5 och 150 cm." };
+      return;
+    }
+    if (jord < 5 || jord > kant) {
+      ramDlg = { ...ramDlg, fel: `Jorddjupet ska vara mellan 5 och ${kant} cm.` };
+      return;
+    }
+    b.kantHojdCm = kant;
+    b.jordDjupCm = jord;
+    ramDlg = { ...ramDlg, visible: false };
+    commit(); renderAll();
+  }
+
+  function ramTaBort() {
+    const b = garden.boxes.find(x => x.id === ramDlg.boxId);
+    if (b) { delete b.kantHojdCm; delete b.jordDjupCm; commit(); renderAll(); }
+    ramDlg = { ...ramDlg, visible: false };
   }
 
   function actRename() {
@@ -1204,9 +1269,43 @@
         <button on:click={() => actRowSpacing(0.1)}>⇕ Bredare rad</button>
       {/if}
       {#if menu.kind === "box" && menuBox()?.typ === "odling"}
+        <button on:click={actRam}>
+          🪵 {arUpphojd(menuBox()) ? "Ändra pallkrage…" : "Gör till pallkrage…"}
+        </button>
         <button on:click={actRename}>✏️ Namnge…</button>
       {/if}
       <button class="danger" on:click={actDelete}>🗑 Ta bort</button>
+    </div>
+  {/if}
+
+  {#if ramDlg.visible}
+    <div class="dlg-backdrop" on:click={() => (ramDlg = { ...ramDlg, visible: false })}>
+      <div class="dlg ram" on:click|stopPropagation>
+        <strong>Upphöjd bädd / pallkrage</strong>
+        <p class="hjalp">
+          En pallkrage är 20 cm hög — två staplade blir 40 cm. Jorden läggs sällan ända
+          upp till kanten, och den kant som blir över skuggar in i bädden.
+        </p>
+        <label for="ram-kant">Ramens höjd över marken (cm)</label>
+        <input id="ram-kant" type="number" min="5" max="150" bind:value={ramDlg.kant}
+               on:keydown={(e) => { if (e.key === "Enter") ramOk(); }} />
+        <label for="ram-jord">Jordytans höjd över marken (cm)</label>
+        <input id="ram-jord" type="number" min="5" max="150" bind:value={ramDlg.jord}
+               on:keydown={(e) => { if (e.key === "Enter") ramOk(); }} />
+        <p class="hjalp">
+          Plantornas höjd räknas från jordytan. Skuggan de kastar ut på marken blir
+          längre, och en fri kant på {Math.max(0, (Number(ramDlg.kant) || 0) - (Number(ramDlg.jord) || 0))} cm
+          skuggar de lägsta plantorna närmast kanten.
+        </p>
+        {#if ramDlg.fel}<p class="fel">{ramDlg.fel}</p>{/if}
+        <div class="dlg-btns">
+          {#if arUpphojd(garden.boxes.find(b => b.id === ramDlg.boxId))}
+            <button class="danger" on:click={ramTaBort}>Ta bort ramen</button>
+          {/if}
+          <button on:click={() => (ramDlg = { ...ramDlg, visible: false })}>Avbryt</button>
+          <button class="primary" on:click={ramOk}>OK</button>
+        </div>
+      </div>
     </div>
   {/if}
 
@@ -1287,4 +1386,9 @@
     padding: 6px 14px; cursor: pointer; font-size: 0.85rem;
   }
   .dlg-btns button.primary { background: #4e7a3a; color: #fff; border-color: #4e7a3a; }
+  .dlg-btns button.danger { color: #b3402a; margin-right: auto; }
+
+  .dlg.ram { max-width: 340px; }
+  .dlg .hjalp { margin: 0; font-size: 0.78rem; color: #77705f; line-height: 1.45; }
+  .dlg .fel { margin: 0; font-size: 0.8rem; color: #b3402a; }
 </style>

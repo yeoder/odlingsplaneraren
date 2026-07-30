@@ -29,7 +29,46 @@ export interface Box {
   w: number;
   h: number;
   label: string;
+  // Upphöjd bädd (pallkrage e.d.). Saknas fälten står bädden i marknivå.
+  // De två måtten är avsiktligt separata: ramen är nästan alltid högre än jorden,
+  // och mellanrummet är just den kant som skuggar in i bädden.
+  kantHojdCm?: number; // ramens överkant över marken
+  jordDjupCm?: number; // jordytan inuti ramen, över marken
 }
+
+/** Ramens överkant över marken (0 = bädd i marknivå). */
+export function kantHojd(b?: Box): number {
+  return b?.kantHojdCm ?? 0;
+}
+
+/** Jordytans höjd över marken — plantorna i rutan står här, inte på marken. */
+export function jordNiva(b?: Box): number {
+  return Math.min(b?.jordDjupCm ?? 0, kantHojd(b));
+}
+
+export function arUpphojd(b?: Box): boolean {
+  return kantHojd(b) > 0;
+}
+
+// Ramens virke, för geometrin i skuggberäkningen. En pallkrage är ~2,5 cm tjock;
+// 5 cm följer rastret och gör kanten synlig utan att äta upp odlingsytan i praktiken.
+export const RAM_TJOCKLEK_CM = 5;
+
+/** De fyra kantbrädornas fotavtryck, för skuggberäkning och ritning. */
+export function ramVaggar(b: Box): Rect[] {
+  const t = Math.min(RAM_TJOCKLEK_CM, b.w / 2, b.h / 2);
+  return [
+    { x: b.x, y: b.y, w: b.w, h: t },
+    { x: b.x, y: b.y + b.h - t, w: b.w, h: t },
+    { x: b.x, y: b.y + t, w: t, h: b.h - 2 * t },
+    { x: b.x + b.w - t, y: b.y + t, w: t, h: b.h - 2 * t },
+  ];
+}
+
+// En pallkrage är 20 cm hög. Två staplade — det vanligaste hemmabygget — ger 40 cm,
+// och jorden läggs sällan ända upp till kanten.
+export const PALLKRAGE_KANT_CM = 40;
+export const PALLKRAGE_JORD_CM = 30;
 
 export interface PlantRow {
   id: number;

@@ -130,6 +130,12 @@ rutor vars kanter ligger inom ~50 cm från varandra.
 Växtföljd mellan år (samma familj på samma plats två år i rad) kräver att odlingen sparas
 per säsong — det hör hemma efter M5/M6 när flera odlingar kan finnas sparade.
 - **M4 — Sol & skugga:** riktning, höjder, skuggzoner morgon/middag/kväll.
+  - **Upphöjda bäddar (pallkragar).** Högerklick på en odlingsruta → ramens höjd och
+    jordytans höjd anges var för sig. Höjder räknas genomgående från MARKEN:
+    plantorna i bädden står på jordytan, ramen toppar högre, och skillnaden är den
+    fria kant som skuggar in i bädden. Utåt räknas hela höjden, så en granne på
+    marken inte hamnar för nära. Skugglängden beräknas därför per par (kastare mot
+    mottagare) i stället för en gång per kastare.
 - **M5 — Årsschema & finputs:** kalender, export/import av trädgårdsfil, ångra/gör om, PWA (offline + installerbar).
 - **M6 — Startsida & återfinning:** "Starta odlingen" med egen id, och ett sätt att hitta
   tillbaka till sin odling om webbläsarens data rensas. Se avsnittet nedan.
